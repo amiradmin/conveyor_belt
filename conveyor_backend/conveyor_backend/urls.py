@@ -20,4 +20,5 @@ from django.urls import path,include
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/vision/', include('vision.urls')),
+    path('api/camera/', include('camera.urls')),
 ]
