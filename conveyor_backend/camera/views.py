@@ -3,12 +3,13 @@ from rest_framework.response import Response
 import cv2
 import base64
 import os
+import numpy as np
 
 class ProcessVideoFile(APIView):
     def post(self, request):
         """
-        دریافت مسیر فایل و پردازش فریم‌ها با نمایش تعداد فریم‌ها
-        و بازگرداندن URL ویدیوی اصلی
+        دریافت مسیر فایل و پردازش فریم‌ها با کانتورها و ماسک نوار نقاله
+        فقط هر ۵امین فریم پردازش می‌شود
         """
         video_path = request.data.get("video_path")
         if not video_path or not os.path.exists(video_path):
@@ -17,7 +18,7 @@ class ProcessVideoFile(APIView):
         cap = cv2.VideoCapture(video_path)
         processed_frames = []
         frame_count = 0
-        selected_count = 0  # تعداد فریم‌های پردازش شده
+        processed_count = 0  # شمارنده فریم‌های پردازش شده
 
         while True:
             ret, frame = cap.read()
@@ -26,29 +27,44 @@ class ProcessVideoFile(APIView):
 
             frame_count += 1
 
-            # فقط هر ۵امین فریم را پردازش کن
-            if frame_count % 5 != 0:
+            # فقط هر ۵امین فریم را پردازش کنیم
+            if processed_count % 5 != 0:
+                processed_count += 1  # همچنان افزایش بدهیم تا شمارش درست باشد
                 continue
 
-            # پردازش ساده: خاکستری + کاهش رزولوشن
+            # تبدیل به خاکستری و Gaussian blur
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            small = cv2.resize(gray, (320, 240))
+            blur = cv2.GaussianBlur(gray, (5,5), 0)
 
-            # encode فریم به base64
+            # ماسک نوار نقاله
+            mask = np.zeros_like(blur)
+            h, w = blur.shape
+            cv2.rectangle(mask, (50, int(h*0.3)), (w-50, int(h*0.7)), 255, -1)
+            masked = cv2.bitwise_and(blur, blur, mask=mask)
+
+            # آستانه گذاری و Canny
+            _, thresh = cv2.threshold(masked, 50, 255, cv2.THRESH_BINARY)
+            edges = cv2.Canny(thresh, 50, 150)
+
+            # کانتورها
+            contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            frame_copy = frame.copy()
+            cv2.drawContours(frame_copy, contours, -1, (0, 255, 0), 2)
+
+            # کاهش رزولوشن
+            small = cv2.resize(frame_copy, (320, 240))
+
+            # encode به base64
             _, buffer = cv2.imencode(".jpg", small)
             img_base64 = base64.b64encode(buffer).decode("utf-8")
             processed_frames.append(img_base64)
-            selected_count += 1
+            processed_count += 1
 
         cap.release()
 
-        # ساخت URL ویدیوی اصلی برای frontend
-        original_video_url = f"http://localhost:8000/media/{os.path.basename(video_path)}"
-
         return Response({
-            "original_video_url": original_video_url,  # مسیر ویدیوی اصلی برای نمایش
-            "total_frames": frame_count,                # تعداد کل فریم‌ها در ویدیو
-            "processed_frames_count": selected_count,   # تعداد فریم‌های پردازش شده
-            "frames": processed_frames,                 # فریم‌های پردازش شده
-
+            "original_video_url": f"http://localhost:8000/media/{os.path.basename(video_path)}",
+            "total_frames": frame_count,
+            "processed_frames_count": processed_count,
+            "frames": processed_frames,
         })
