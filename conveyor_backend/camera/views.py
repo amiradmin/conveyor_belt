@@ -8,6 +8,7 @@ class ProcessVideoFile(APIView):
     def post(self, request):
         """
         دریافت مسیر فایل و پردازش فریم‌ها با نمایش تعداد فریم‌ها
+        و بازگرداندن URL ویدیوی اصلی
         """
         video_path = request.data.get("video_path")
         if not video_path or not os.path.exists(video_path):
@@ -40,8 +41,14 @@ class ProcessVideoFile(APIView):
             selected_count += 1
 
         cap.release()
+
+        # ساخت URL ویدیوی اصلی برای frontend
+        original_video_url = f"http://localhost:8000/media/{os.path.basename(video_path)}"
+
         return Response({
-            "total_frames": frame_count,          # تعداد کل فریم‌ها در ویدیو
-            "processed_frames_count": selected_count,  # تعداد فریم‌های پردازش شده
-            "frames": processed_frames
+            "original_video_url": original_video_url,  # مسیر ویدیوی اصلی برای نمایش
+            "total_frames": frame_count,                # تعداد کل فریم‌ها در ویدیو
+            "processed_frames_count": selected_count,   # تعداد فریم‌های پردازش شده
+            "frames": processed_frames,                 # فریم‌های پردازش شده
+
         })
