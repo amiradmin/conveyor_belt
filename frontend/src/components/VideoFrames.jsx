@@ -15,7 +15,7 @@ function VideoFrames() {
       try {
         const response = await axios.post(
           "http://localhost:8000/api/camera/process-video/",
-          { video_path: "/app/video/test.mp4" } // مسیر ویدیوی تست
+          { video_path: "/app/media/test3.mp4" }
         );
 
         setTotalFrames(response.data.total_frames);
