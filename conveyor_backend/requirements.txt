@@ -7,3 +7,6 @@ Pillow
 dj-database-url
 psycopg2-binary
 opencv-python-headless
+channels
+channels-redis
+daphne

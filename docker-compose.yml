@@ -15,7 +15,7 @@ services:
   backend:
     build: ./conveyor_backend
     container_name: conveyor_django
-    command: python manage.py runserver 0.0.0.0:8000
+    command: daphne -b 0.0.0.0 -p 8000 conveyor_backend.asgi:application
     volumes:
       - ./conveyor_backend:/app
     ports:

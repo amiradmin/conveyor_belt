@@ -5,12 +5,16 @@ import base64
 import os
 import numpy as np
 
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
+
+
 class ProcessVideoFile(APIView):
     def post(self, request):
         """
-        دریافت مسیر فایل و پردازش فریم‌ها با کانتورها و ماسک نوار نقاله
-        فقط هر ۵امین فریم پردازش می‌شود
+        پردازش ویدیو + ارسال شماره فریم پردازش شده به WebSocket
         """
+
         video_path = request.data.get("video_path")
         if not video_path or not os.path.exists(video_path):
             return Response({"error": "Video file not found"}, status=400)
@@ -18,7 +22,12 @@ class ProcessVideoFile(APIView):
         cap = cv2.VideoCapture(video_path)
         processed_frames = []
         frame_count = 0
-        processed_count = 0  # شمارنده فریم‌های پردازش شده
+        processed_count = 0
+        zoom_factor = 3
+        large_stone_area = 1000
+
+        # WebSocket channel layer
+        channel_layer = get_channel_layer()
 
         while True:
             ret, frame = cap.read()
@@ -27,19 +36,22 @@ class ProcessVideoFile(APIView):
 
             frame_count += 1
 
-            # فقط هر ۵امین فریم را پردازش کنیم
+            # فقط هر ۵امین فریم پردازش شود
             if processed_count % 5 != 0:
-                processed_count += 1  # همچنان افزایش بدهیم تا شمارش درست باشد
+                processed_count += 1
                 continue
 
-            # تبدیل به خاکستری و Gaussian blur
+            # بزرگ‌نمایی تصویر
+            frame = cv2.resize(frame, (frame.shape[1] * zoom_factor,
+                                       frame.shape[0] * zoom_factor))
+
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            blur = cv2.GaussianBlur(gray, (5,5), 0)
+            blur = cv2.GaussianBlur(gray, (5, 5), 0)
 
             # ماسک نوار نقاله
             mask = np.zeros_like(blur)
             h, w = blur.shape
-            cv2.rectangle(mask, (50, int(h*0.3)), (w-50, int(h*0.7)), 255, -1)
+            cv2.rectangle(mask, (50, int(h * 0.3)), (w - 50, int(h * 0.7)), 255, -1)
             masked = cv2.bitwise_and(blur, blur, mask=mask)
 
             # آستانه گذاری و Canny
@@ -49,15 +61,27 @@ class ProcessVideoFile(APIView):
             # کانتورها
             contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             frame_copy = frame.copy()
-            cv2.drawContours(frame_copy, contours, -1, (0, 255, 0), 2)
 
-            # کاهش رزولوشن
+            for cnt in contours:
+                area = cv2.contourArea(cnt)
+                color = (0, 0, 255) if area >= large_stone_area else (0, 255, 0)
+                cv2.drawContours(frame_copy, [cnt], -1, color, 2)
+
             small = cv2.resize(frame_copy, (320, 240))
 
-            # encode به base64
             _, buffer = cv2.imencode(".jpg", small)
             img_base64 = base64.b64encode(buffer).decode("utf-8")
             processed_frames.append(img_base64)
+
+            # 🔴🔴 SEND PROGRESS TO WEBSOCKET 🔴🔴
+            async_to_sync(channel_layer.group_send)(
+                "frame_progress",   # Group name
+                {
+                    "type": "progress_message",
+                    "frame": processed_count
+                }
+            )
+
             processed_count += 1
 
         cap.release()

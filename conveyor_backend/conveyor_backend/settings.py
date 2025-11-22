@@ -41,7 +41,8 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'camera',
-    'corsheaders'
+    'corsheaders',
+    "channels",
 ]
 
 MIDDLEWARE = [
@@ -140,3 +141,11 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://172.18.0.4:5173",
 ]
+
+ASGI_APPLICATION = "conveyor_backend.asgi.application"
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer"
+    }
+}
