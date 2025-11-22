@@ -1,0 +1,40 @@
+services:
+  db:
+    image: postgres:16
+    container_name: conveyor_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: conveyor_user
+      POSTGRES_PASSWORD: Conveyor@123
+      POSTGRES_DB: conveyor_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build: ./conveyor_backend
+    container_name: conveyor_django
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - ./conveyor_backend:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    environment:
+      - DATABASE_URL=postgres://conveyor_user:Conveyor@123@db:5432/conveyor_db
+
+  frontend:
+    build: ./frontend
+    container_name: conveyor_react
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "3000:5173"
+    command: npm run dev
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
