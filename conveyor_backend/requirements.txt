@@ -1,13 +1,12 @@
 django
 djangorestframework
 django-cors-headers
-opencv-python
+opencv-python-headless
 numpy
 Pillow
 dj-database-url
 psycopg2-binary
-opencv-python-headless
 channels
 channels-redis
 daphne
-ultralytics
+ultralytics==8.2.77

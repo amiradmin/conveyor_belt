@@ -1,114 +1,158 @@
+/* Container اصلی صفحه */
 .page-container {
   max-width: 900px;
-  margin: 40px auto;
-  padding: 20px;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  margin: 2rem auto;
+  padding: 1.5rem;
+  background: #f8fafc;
+  border-radius: 12px;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+  font-family: 'Inter', sans-serif;
 }
 
+/* عنوان صفحه */
 .page-title {
   text-align: center;
-  font-size: 2.5rem;
-  color: #333;
-  margin-bottom: 30px;
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 1.5rem;
+  color: #1e293b;
 }
 
+/* خطاها */
 .error-box {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: #f8d7da;
-  color: #842029;
-  padding: 12px 16px;
+  background: #fee2e2;
+  border: 1px solid #f87171;
+  color: #b91c1c;
+  padding: 0.75rem 1rem;
   border-radius: 8px;
-  margin-bottom: 20px;
+  margin-bottom: 1rem;
+  font-weight: 500;
+  text-align: center;
 }
 
-.error-box button {
-  background: #842029;
-  color: white;
-  border: none;
-  padding: 6px 12px;
-  border-radius: 5px;
-  cursor: pointer;
-}
-.error-box button:hover { background: #6c1b1e; }
-
+/* کنترل‌ها (دکمه‌ها، select، checkbox) */
 .controls {
   display: flex;
-  gap: 12px;
-  justify-content: center;
-  margin-bottom: 30px;
   flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 1.5rem;
 }
 
+/* دکمه‌ها */
 .btn {
-  padding: 10px 20px;
+  padding: 0.5rem 1rem;
   border-radius: 8px;
-  font-weight: bold;
+  font-weight: 600;
   cursor: pointer;
+  transition: all 0.2s;
   border: none;
-  transition: all 0.2s ease;
 }
 
-.btn-start { background: #4f46e5; color: #fff; }
-.btn-start:hover { background: #4338ca; }
+.btn-start {
+  background-color: #2563eb;
+  color: white;
+}
 
-.btn-stop { background: #dc2626; color: #fff; }
-.btn-stop:hover { background: #b91c1c; }
+.btn-start:hover {
+  background-color: #1d4ed8;
+}
 
+.btn-stop {
+  background-color: #dc2626;
+  color: white;
+}
+
+.btn-stop:hover {
+  background-color: #b91c1c;
+}
+
+/* Checkbox label */
 .checkbox-label {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 0.5rem;
   font-weight: 500;
+  color: #1e293b;
 }
 
+/* Select input */
 .select {
-  padding: 8px 12px;
-  border-radius: 6px;
-  border: 1px solid #ccc;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  font-weight: 500;
+  background: white;
+  cursor: pointer;
+  transition: border 0.2s;
 }
 
+.select:hover {
+  border-color: #2563eb;
+}
+
+/* Container برای ویدئو و canvas */
 .video-container {
-  display: flex;
-  gap: 20px;
-  justify-content: center;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
 }
 
 .video-card {
-  background: #fff;
-  padding: 12px;
+  background: white;
   border-radius: 12px;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.1);
-  text-align: center;
-  width: 400px;
-}
-
-.video-card video,
-.video-card canvas {
-  width: 100%;
-  border-radius: 10px;
-  background: black;
+  padding: 0.75rem;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .video-card h2 {
-  margin-top: 10px;
-  font-size: 1.2rem;
-  color: #555;
+  margin-top: 0.5rem;
+  font-weight: 600;
+  color: #1e293b;
 }
 
+/* ویدئو */
+video {
+  width: 100%;
+  border-radius: 8px;
+  border: 2px solid #e2e8f0;
+  max-height: 360px;
+}
+
+/* Canvas */
+canvas {
+  width: 100%;
+  border-radius: 8px;
+  border: 2px solid #e2e8f0;
+  max-height: 360px;
+}
+
+/* Detection Box */
 .detection-box {
-  margin-top: 30px;
   text-align: center;
-  font-size: 1.3rem;
-  font-weight: bold;
-  color: #fff;
-  background: #9ca3af; /* gray */
-  padding: 12px;
-  border-radius: 10px;
+  font-weight: 600;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  background: #e2e8f0;
+  color: #1e293b;
+  font-size: 1rem;
+  transition: all 0.3s;
 }
 
 .detection-box.detected {
-  background: #10b981; /* green */
+  background: #d1fae5;
+  color: #065f46;
+  border: 2px solid #10b981;
+}
+
+/* Responsive برای موبایل */
+@media (max-width: 768px) {
+  .video-container {
+    grid-template-columns: 1fr;
+  }
 }

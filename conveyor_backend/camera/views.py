@@ -9,6 +9,8 @@ from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from collections import deque
 
+# Load YOLO once
+model = YOLO("yolov8n.pt")
 
 class StreamFrameAPIView(APIView):
     def post(self, request):
@@ -16,21 +18,44 @@ class StreamFrameAPIView(APIView):
         if not file:
             return Response({"error": "No frame received"}, status=400)
 
-        # Read image bytes
+        # Decode frame
         img_bytes = file.read()
         img_array = np.frombuffer(img_bytes, np.uint8)
         frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
 
-        # Example: convert to grayscale
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        if frame is None:
+            return Response({"error": "Invalid image"}, status=400)
 
-        # You can run ANY CV/ML model here
-        # e.g., detect damaged sensors, belt tears, etc.
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        results = model.predict(rgb, conf=0.5, verbose=False)
 
-        # Demo output (no file return)
-        return Response({"message": "Frame received"}, status=200)
+        detected = False
+        confidence = 0.0
+        box = None
 
+        for r in results:
+            for b, cls, conf in zip(r.boxes.xyxy, r.boxes.cls, r.boxes.conf):
+                name = model.names[int(cls)].lower()
+                if name in ["cup", "mug", "coffee"]:
+                    detected = True
+                    confidence = float(conf)
+                    box = [float(x) for x in b]
+                    break
+            if detected:
+                break
 
+        # Add CORS headers
+        response = Response({
+            "coffee_detected": detected,
+            "confidence": confidence,
+            "bbox": box
+        })
+
+        response["Access-Control-Allow-Origin"] = "*"
+        response["Access-Control-Allow-Headers"] = "*"
+        response["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+
+        return response
 
 class ProcessVideoFile(APIView):
     def post(self, request):

@@ -1,167 +1,115 @@
-import React, { useRef, useState, useEffect, useCallback } from "react";
-import * as tf from "@tensorflow/tfjs";
-import * as cocoSsd from "@tensorflow-models/coco-ssd";
+import React, { useRef, useState, useEffect } from "react";
 import "./ImageProcessingPage.css";
 
 export default function ImageProcessingPage() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const rafRef = useRef(null);
-  const streamRef = useRef(null);
 
   const [streamActive, setStreamActive] = useState(false);
-  const [processing, setProcessing] = useState(false);
-  const [mode, setMode] = useState("grayscale");
-  const [error, setError] = useState(null);
   const [coffeeDetected, setCoffeeDetected] = useState(false);
   const [confidence, setConfidence] = useState(0);
-  const modelRef = useRef(null);
 
-  // Load object detection model
   useEffect(() => {
-    cocoSsd.load().then(model => {
-      modelRef.current = model;
-      console.log("Coco-SSD model loaded");
-    });
-  }, []);
+    if (!streamActive) return;
 
-  const startWebcam = useCallback(async () => {
-    setError(null);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
-      streamRef.current = stream;
-      videoRef.current.srcObject = stream;
-      await new Promise(resolve => (videoRef.current.onloadedmetadata = resolve));
-      setStreamActive(true);
-    } catch (err) {
-      setError(`Failed to access webcam: ${err.message}`);
-    }
-  }, []);
-
-  const stopWebcam = useCallback(() => {
-    setStreamActive(false);
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
-    if (videoRef.current) videoRef.current.srcObject = null;
-  }, []);
-
-  // Frame processing
-  const processFrame = useCallback(async () => {
-    if (!videoRef.current || !canvasRef.current) return;
     const video = videoRef.current;
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
 
-    if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+    const interval = setInterval(async () => {
+      if (!video || !canvas) return;
+
+      // Resize canvas
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
-    }
 
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      // Draw frame
+      ctx.drawImage(video, 0, 0);
 
-    if (processing) {
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const data = imageData.data;
+      // Convert canvas to JPEG
+      canvas.toBlob(async (blob) => {
+        if (!blob) return;
 
-      if (mode === "grayscale") {
-        for (let i = 0; i < data.length; i += 4) {
-          const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-          data[i] = data[i + 1] = data[i + 2] = gray;
-        }
-      } else if (mode === "edge") {
-        // Sobel edge detection
-        const grayData = [];
-        for (let i = 0; i < data.length; i += 4) {
-          const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-          grayData.push(gray);
-        }
-        const w = canvas.width;
-        const h = canvas.height;
-        const newData = new Uint8ClampedArray(data.length);
-        const sobelX = [-1,0,1,-2,0,2,-1,0,1];
-        const sobelY = [-1,-2,-1,0,0,0,1,2,1];
+        const formData = new FormData();
+        formData.append("frame", blob, "frame.jpg");
 
-        for (let y = 1; y < h-1; y++) {
-          for (let x = 1; x < w-1; x++) {
-            let gx = 0, gy = 0;
-            for (let ky = -1; ky <= 1; ky++) {
-              for (let kx = -1; kx <= 1; kx++) {
-                const idx = (y+ky)*w + (x+kx);
-                const kIdx = (ky+1)*3 + (kx+1);
-                gx += grayData[idx]*sobelX[kIdx];
-                gy += grayData[idx]*sobelY[kIdx];
-              }
-            }
-            const mag = Math.min(255, Math.sqrt(gx*gx + gy*gy));
-            const i = (y*w + x)*4;
-            newData[i] = newData[i+1] = newData[i+2] = mag;
-            newData[i+3] = 255;
+        try {
+          const res = await fetch("http://localhost:8000/api/camera/stream/", {
+            method: "POST",
+            body: formData,
+          });
+
+          const data = await res.json();
+
+          setCoffeeDetected(data.coffee_detected);
+          setConfidence(data.confidence || 0);
+
+          // Draw YOLO box if exists
+          if (data.bbox) {
+            const [x1, y1, x2, y2] = data.bbox;
+            ctx.strokeStyle = "lime";
+            ctx.lineWidth = 3;
+            ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+
+            ctx.font = "16px Arial";
+            ctx.fillStyle = "lime";
+            ctx.fillText(
+              `Mug ${(data.confidence * 100).toFixed(1)}%`,
+              x1,
+              y1 - 6
+            );
           }
+        } catch (err) {
+          console.error(err);
         }
-        imageData.data.set(newData);
-      }
+      }, "image/jpeg");
+    }, 150);
 
-      ctx.putImageData(imageData, 0, 0);
+    return () => clearInterval(interval);
+  }, [streamActive]);
+
+  const startWebcam = async () => {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 640, height: 480 },
+    });
+    videoRef.current.srcObject = stream;
+    setStreamActive(true);
+  };
+
+  const stopWebcam = () => {
+    setStreamActive(false);
+    const stream = videoRef.current.srcObject;
+    if (stream) {
+      stream.getTracks().forEach((t) => t.stop());
     }
-
-    // Object detection
-    if (modelRef.current) {
-      const predictions = await modelRef.current.detect(video);
-      const cup = predictions.find(p => p.class === "cup" && p.score > 0.5);
-      if (cup) {
-        setCoffeeDetected(true);
-        setConfidence(cup.score);
-        ctx.strokeStyle = "lime";
-        ctx.lineWidth = 3;
-        ctx.strokeRect(cup.bbox[0], cup.bbox[1], cup.bbox[2], cup.bbox[3]);
-        ctx.font = "16px Arial";
-        ctx.fillStyle = "lime";
-        ctx.fillText(`Cup ${Math.round(cup.score*100)}%`, cup.bbox[0], cup.bbox[1]-5);
-      } else {
-        setCoffeeDetected(false);
-        setConfidence(0);
-      }
-    }
-
-    rafRef.current = requestAnimationFrame(processFrame);
-  }, [processing, mode]);
-
-  useEffect(() => {
-    if (streamActive) rafRef.current = requestAnimationFrame(processFrame);
-    return () => rafRef.current && cancelAnimationFrame(rafRef.current);
-  }, [streamActive, processFrame]);
+    videoRef.current.srcObject = null;
+  };
 
   return (
     <div className="page-container">
-      <h1 className="page-title">☕ Coffee Mug Detection</h1>
-      {error && <div className="error-box">{error}</div>}
+      <h1 className="page-title">☕ Mug Detection (YOLOv8 - CPU)</h1>
+
       <div className="controls">
         {!streamActive ? (
-          <button className="btn btn-start" onClick={startWebcam}>Start Webcam</button>
+          <button onClick={startWebcam} className="btn btn-start">
+            Start Webcam
+          </button>
         ) : (
-          <button className="btn btn-stop" onClick={stopWebcam}>Stop Webcam</button>
+          <button onClick={stopWebcam} className="btn btn-stop">
+            Stop Webcam
+          </button>
         )}
-        <label className="checkbox-label">
-          <input type="checkbox" checked={processing} onChange={e => setProcessing(e.target.checked)} />
-          Apply Processing
-        </label>
-        <select value={mode} onChange={e => setMode(e.target.value)} className="select">
-          <option value="grayscale">Grayscale</option>
-          <option value="edge">Edge Detect</option>
-        </select>
       </div>
-      <div className="video-container">
-        <div className="video-card">
-          <video ref={videoRef} autoPlay muted playsInline />
-          <h2>Camera Feed</h2>
-        </div>
-        <div className="video-card">
-          <canvas ref={canvasRef} />
-          <h2>Processed Output</h2>
-        </div>
+
+      <div className="video-box">
+        <video ref={videoRef} autoPlay muted playsInline />
+        <canvas ref={canvasRef} />
       </div>
+
       <div className={`detection-box ${coffeeDetected ? "detected" : ""}`}>
-        {coffeeDetected ? `☕ Mug detected! Confidence: ${(confidence*100).toFixed(1)}%` : "No coffee detected."}
+        {coffeeDetected
+          ? `☕ Mug detected! Confidence: ${(confidence * 100).toFixed(1)}%`
+          : "No mug detected."}
       </div>
     </div>
   );
