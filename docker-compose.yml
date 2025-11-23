@@ -30,9 +30,15 @@ services:
     container_name: conveyor_react
     volumes:
       - ./frontend:/app
+      - /app/node_modules
     ports:
       - "3000:5173"
-    command: npm run dev
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    # Camera device access for Linux
+    devices:
+      - "/dev/video0:/dev/video0"
+    command: npm run dev -- --host 0.0.0.0
     depends_on:
       - backend
 

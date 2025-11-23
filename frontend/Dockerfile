@@ -1,4 +1,3 @@
-# Use Node.js LTS
 FROM node:20-alpine
 
 WORKDIR /app
@@ -15,5 +14,5 @@ COPY . .
 # Expose Vite dev server port
 EXPOSE 5173
 
-# Start development server with host binding
+# Start development server
 CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

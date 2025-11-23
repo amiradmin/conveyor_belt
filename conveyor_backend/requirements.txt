@@ -10,3 +10,4 @@ opencv-python-headless
 channels
 channels-redis
 daphne
+ultralytics
