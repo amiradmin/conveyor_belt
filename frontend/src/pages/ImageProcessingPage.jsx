@@ -1,6 +1,8 @@
 import React, { useRef, useState, useEffect } from "react";
 import "./ImageProcessingPage.css";
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
 export default function ImageProcessingPage() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -16,17 +18,14 @@ export default function ImageProcessingPage() {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
 
-    const interval = setInterval(async () => {
+    const interval = setInterval(() => {
       if (!video || !canvas) return;
 
-      // Resize canvas
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
 
-      // Draw frame
       ctx.drawImage(video, 0, 0);
 
-      // Convert canvas to JPEG
       canvas.toBlob(async (blob) => {
         if (!blob) return;
 
@@ -34,55 +33,50 @@ export default function ImageProcessingPage() {
         formData.append("frame", blob, "frame.jpg");
 
         try {
-          const res = await fetch("http://localhost:8000/api/camera/stream/", {
+          const res = await fetch(`${API_BASE_URL}/api/camera/stream/`, {
             method: "POST",
             body: formData,
           });
-
           const data = await res.json();
 
           setCoffeeDetected(data.coffee_detected);
           setConfidence(data.confidence || 0);
 
-          // Draw YOLO box if exists
+          // Clear previous bounding box
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(video, 0, 0);
+
+          // Draw bounding box if detected
           if (data.bbox) {
             const [x1, y1, x2, y2] = data.bbox;
-            ctx.strokeStyle = "lime";
+            ctx.strokeStyle = "#00ff88";
             ctx.lineWidth = 3;
             ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
 
-            ctx.font = "16px Arial";
-            ctx.fillStyle = "lime";
-            ctx.fillText(
-              `Mug ${(data.confidence * 100).toFixed(1)}%`,
-              x1,
-              y1 - 6
-            );
+            ctx.font = "18px Arial";
+            ctx.fillStyle = "#00ff88";
+            ctx.fillText(`Mug ${(data.confidence*100).toFixed(1)}%`, x1, y1-8);
           }
         } catch (err) {
           console.error(err);
         }
       }, "image/jpeg");
-    }, 150);
+    }, 200);
 
     return () => clearInterval(interval);
   }, [streamActive]);
 
   const startWebcam = async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: 640, height: 480 },
-    });
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
     videoRef.current.srcObject = stream;
     setStreamActive(true);
   };
 
   const stopWebcam = () => {
-    setStreamActive(false);
     const stream = videoRef.current.srcObject;
-    if (stream) {
-      stream.getTracks().forEach((t) => t.stop());
-    }
+    if (stream) stream.getTracks().forEach(track => track.stop());
     videoRef.current.srcObject = null;
+    setStreamActive(false);
   };
 
   return (
@@ -91,25 +85,25 @@ export default function ImageProcessingPage() {
 
       <div className="controls">
         {!streamActive ? (
-          <button onClick={startWebcam} className="btn btn-start">
-            Start Webcam
-          </button>
+          <button className="btn btn-start" onClick={startWebcam}>Start Webcam</button>
         ) : (
-          <button onClick={stopWebcam} className="btn btn-stop">
-            Stop Webcam
-          </button>
+          <button className="btn btn-stop" onClick={stopWebcam}>Stop Webcam</button>
         )}
       </div>
 
-      <div className="video-box">
-        <video ref={videoRef} autoPlay muted playsInline />
-        <canvas ref={canvasRef} />
+      <div className="video-container">
+        <div className="video-card">
+          <video ref={videoRef} autoPlay muted playsInline />
+          <h3>Camera Feed</h3>
+        </div>
+        <div className="video-card">
+          <canvas ref={canvasRef} />
+          <h3>Processed Output</h3>
+        </div>
       </div>
 
-      <div className={`detection-box ${coffeeDetected ? "detected" : ""}`}>
-        {coffeeDetected
-          ? `☕ Mug detected! Confidence: ${(confidence * 100).toFixed(1)}%`
-          : "No mug detected."}
+      <div className={`detection-box ${coffeeDetected ? "detected" : "not-detected"}`}>
+        {coffeeDetected ? `☕ Mug detected! Confidence: ${(confidence*100).toFixed(1)}%` : "No mug detected."}
       </div>
     </div>
   );

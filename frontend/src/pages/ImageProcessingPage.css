@@ -1,158 +1,117 @@
-/* Container اصلی صفحه */
+/* ===== PAGE LAYOUT ===== */
 .page-container {
-  max-width: 900px;
-  margin: 2rem auto;
-  padding: 1.5rem;
-  background: #f8fafc;
-  border-radius: 12px;
-  box-shadow: 0 8px 20px rgba(0,0,0,0.1);
-  font-family: 'Inter', sans-serif;
+  width: 100%;
+  max-width: 1200px;
+  margin: 40px auto;
+  padding: 20px;
+  color: #e8e8e8;
+  font-family: "Inter", sans-serif;
+  text-align: center;
 }
 
-/* عنوان صفحه */
+/* ===== TITLE ===== */
 .page-title {
-  text-align: center;
-  font-size: 2rem;
+  font-size: 2.2rem;
   font-weight: 700;
-  margin-bottom: 1.5rem;
-  color: #1e293b;
+  margin-bottom: 30px;
+  color: #00ff88;
+  text-shadow: 0 0 12px rgba(0, 255, 136, 0.7);
 }
 
-/* خطاها */
-.error-box {
-  background: #fee2e2;
-  border: 1px solid #f87171;
-  color: #b91c1c;
-  padding: 0.75rem 1rem;
-  border-radius: 8px;
-  margin-bottom: 1rem;
-  font-weight: 500;
-  text-align: center;
-}
-
-/* کنترل‌ها (دکمه‌ها، select، checkbox) */
+/* ===== BUTTONS ===== */
 .controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
-  justify-content: center;
-  align-items: center;
-  margin-bottom: 1.5rem;
+  margin-bottom: 20px;
 }
 
-/* دکمه‌ها */
 .btn {
-  padding: 0.5rem 1rem;
-  border-radius: 8px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
+  padding: 14px 32px;
+  font-size: 1.1rem;
   border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.25s ease;
+  box-shadow: 0 0 15px rgba(0, 255, 136, 0.5);
 }
 
 .btn-start {
-  background-color: #2563eb;
-  color: white;
+  background: #00ff88;
+  color: #101010;
 }
 
 .btn-start:hover {
-  background-color: #1d4ed8;
+  background: #0aff99;
+  transform: scale(1.05);
 }
 
 .btn-stop {
-  background-color: #dc2626;
+  background: #ff4444;
   color: white;
+  box-shadow: 0 0 15px rgba(255, 68, 68, 0.5);
 }
 
 .btn-stop:hover {
-  background-color: #b91c1c;
+  background: #ff5555;
+  transform: scale(1.05);
 }
 
-/* Checkbox label */
-.checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 500;
-  color: #1e293b;
-}
-
-/* Select input */
-.select {
-  padding: 0.5rem 0.75rem;
-  border-radius: 8px;
-  border: 1px solid #cbd5e1;
-  font-weight: 500;
-  background: white;
-  cursor: pointer;
-  transition: border 0.2s;
-}
-
-.select:hover {
-  border-color: #2563eb;
-}
-
-/* Container برای ویدئو و canvas */
+/* ===== VIDEO CONTAINER ROW ===== */
 .video-container {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-}
-
-.video-card {
-  background: white;
-  border-radius: 12px;
-  padding: 0.75rem;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
   display: flex;
-  flex-direction: column;
-  align-items: center;
+  justify-content: center;
+  gap: 30px; /* space between videos */
+  flex-wrap: wrap;
+  margin-top: 20px;
 }
 
-.video-card h2 {
-  margin-top: 0.5rem;
-  font-weight: 600;
-  color: #1e293b;
+/* ===== VIDEO + CANVAS CARD ===== */
+.video-card {
+  position: relative;
+  display: inline-block;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 0 30px rgba(0, 255, 136, 0.2);
+  width: 480px; /* larger video width */
 }
 
-/* ویدئو */
-video {
-  width: 100%;
-  border-radius: 8px;
-  border: 2px solid #e2e8f0;
-  max-height: 360px;
-}
-
-/* Canvas */
+video,
 canvas {
   width: 100%;
-  border-radius: 8px;
-  border: 2px solid #e2e8f0;
-  max-height: 360px;
+  height: auto;
+  display: block;
 }
 
-/* Detection Box */
+/* ===== DETECTION STATUS BOX ===== */
 .detection-box {
-  text-align: center;
-  font-weight: 600;
-  padding: 0.75rem 1rem;
-  border-radius: 8px;
-  background: #e2e8f0;
-  color: #1e293b;
-  font-size: 1rem;
-  transition: all 0.3s;
+  margin-top: 25px;
+  padding: 20px;
+  font-size: 1.3rem;
+  font-weight: 500;
+  width: 70%;
+  margin-left: auto;
+  margin-right: auto;
+  border-radius: 16px;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(12px);
+  background: rgba(20, 20, 20, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.detection-box.detected {
-  background: #d1fae5;
-  color: #065f46;
-  border: 2px solid #10b981;
+.detected {
+  color: #00ff88;
+  border: 1px solid rgba(0, 255, 136, 0.6);
+  box-shadow: 0 0 20px rgba(0, 255, 136, 0.6);
 }
 
-/* Responsive برای موبایل */
-@media (max-width: 768px) {
-  .video-container {
-    grid-template-columns: 1fr;
-  }
+.not-detected {
+  color: #ff8888;
+  border: 1px solid rgba(255, 100, 100, 0.3);
+}
+
+/* ===== ANIMATED BOUNDING BOX ===== */
+.bbox {
+  position: absolute;
+  border: 3px solid #00ff88;
+  box-shadow: 0 0 15px #00ff88;
+  transition: all 0.15s ease; /* smooth bounding box movement */
 }
