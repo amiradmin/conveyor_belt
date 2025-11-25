@@ -27,7 +27,7 @@ function Sidebar({ color, image, routes }) {
             </div>
           </a>
           <a className="simple-text" href="" style={{fontFamily: 'Vazir, Tahoma'}}>
-            اسمارت بلت
+           Smart Belt
           </a>
         </div>
         <Nav>
