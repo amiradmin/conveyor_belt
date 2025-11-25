@@ -13,7 +13,8 @@ export default function ConveyorBelt() {
       lastMaintenance: '۱۴۰۲/۱۰/۱۵',
       nextMaintenance: '۱۴۰۲/۱۱/۱۵',
       efficiency: 92,
-      alerts: 2
+      alerts: 2,
+      cameraUrl: 'https://example.com/stream/camera1'
     },
     {
       id: 2,
@@ -25,7 +26,8 @@ export default function ConveyorBelt() {
       lastMaintenance: '۱۴۰۲/۱۰/۲۰',
       nextMaintenance: '۱۴۰۲/۱۱/۲۰',
       efficiency: 0,
-      alerts: 1
+      alerts: 1,
+      cameraUrl: 'https://example.com/stream/camera2'
     },
     {
       id: 3,
@@ -37,7 +39,8 @@ export default function ConveyorBelt() {
       lastMaintenance: '۱۴۰۲/۱۰/۱۰',
       nextMaintenance: '۱۴۰۲/۱۱/۱۰',
       efficiency: 88,
-      alerts: 3
+      alerts: 3,
+      cameraUrl: 'https://example.com/stream/camera3'
     },
     {
       id: 4,
@@ -49,7 +52,8 @@ export default function ConveyorBelt() {
       lastMaintenance: '۱۴۰۲/۱۰/۲۵',
       nextMaintenance: '۱۴۰۲/۱۰/۲۸',
       efficiency: 0,
-      alerts: 0
+      alerts: 0,
+      cameraUrl: 'https://example.com/stream/camera4'
     }
   ]);
 
@@ -60,6 +64,9 @@ export default function ConveyorBelt() {
     underMaintenance: 0,
     averageEfficiency: 0
   });
+
+  const [selectedConveyor, setSelectedConveyor] = useState(null);
+  const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
     // Calculate statistics
@@ -115,6 +122,16 @@ export default function ConveyorBelt() {
     setConveyors(prev => prev.map(c =>
       c.id === id ? { ...c, status: 'stopped', speed: 0, load: 0 } : c
     ));
+  };
+
+  const handleViewConveyor = (conveyor) => {
+    setSelectedConveyor(conveyor);
+    setShowModal(true);
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+    setSelectedConveyor(null);
   };
 
   return (
@@ -254,7 +271,10 @@ export default function ConveyorBelt() {
                   </td>
                   <td>
                     <div className="flex items-center gap-2">
-                      <button className="btn btn-primary">
+                      <button
+                        className="btn btn-primary"
+                        onClick={() => handleViewConveyor(conveyor)}
+                      >
                         مشاهده
                       </button>
                       {conveyor.status === 'active' ? (
@@ -303,6 +323,97 @@ export default function ConveyorBelt() {
           </button>
         </div>
       </div>
+
+      {/* Live Stream Modal */}
+      {showModal && selectedConveyor && (
+        <div className="modal-overlay">
+          <div className="modal-container">
+            <div className="modal-header">
+              <h3 className="modal-title">
+                <i className="nc-icon nc-camera-compact ml-2"></i>
+                مشاهده زنده - {selectedConveyor.name}
+              </h3>
+              <button className="modal-close" onClick={closeModal}>
+                <i className="nc-icon nc-simple-remove"></i>
+              </button>
+            </div>
+            <div className="modal-content">
+              {/* Live Stream Video */}
+              <div className="video-container">
+                <div className="video-placeholder">
+                  <i className="nc-icon nc-tv-2 text-6xl text-gray-400"></i>
+                  <p className="text-gray-500 mt-4">پخش زنده دوربین</p>
+                  <p className="text-sm text-gray-400">
+                    {selectedConveyor.cameraUrl}
+                  </p>
+                </div>
+                {/* For real implementation, replace with:
+                <video controls autoPlay className="w-full h-full">
+                  <source src={selectedConveyor.cameraUrl} type="video/mp4" />
+                  مرورگر شما از پخش ویدیو پشتیبانی نمی‌کند.
+                </video>
+                */}
+              </div>
+
+              {/* Conveyor Details */}
+              <div className="conveyor-details-grid">
+                <div className="detail-item">
+                  <span className="detail-label">وضعیت:</span>
+                  <span className="detail-value">{getStatusBadge(selectedConveyor.status)}</span>
+                </div>
+                <div className="detail-item">
+                  <span className="detail-label">سرعت:</span>
+                  <span className="detail-value">{selectedConveyor.speed.toFixed(1)} m/s</span>
+                </div>
+                <div className="detail-item">
+                  <span className="detail-label">دما:</span>
+                  <span className="detail-value">{selectedConveyor.temperature} °C</span>
+                </div>
+                <div className="detail-item">
+                  <span className="detail-label">بارگیری:</span>
+                  <span className="detail-value">{selectedConveyor.load}%</span>
+                </div>
+                <div className="detail-item">
+                  <span className="detail-label">بازدهی:</span>
+                  <span className={`detail-value ${getEfficiencyColor(selectedConveyor.efficiency)}`}>
+                    {selectedConveyor.efficiency}%
+                  </span>
+                </div>
+                <div className="detail-item">
+                  <span className="detail-label">هشدارها:</span>
+                  <span className="detail-value">
+                    {selectedConveyor.alerts > 0 ? (
+                      <span className="text-red-500">{selectedConveyor.alerts} هشدار فعال</span>
+                    ) : (
+                      <span className="text-green-500">بدون هشدار</span>
+                    )}
+                  </span>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="modal-actions">
+                <button className="btn btn-primary">
+                  <i className="nc-icon nc-zoom-split ml-2"></i>
+                  بزرگنمایی
+                </button>
+                <button className="btn btn-secondary">
+                  <i className="nc-icon nc-settings ml-2"></i>
+                  تنظیمات دوربین
+                </button>
+                <button className="btn btn-success">
+                  <i className="nc-icon nc-image ml-2"></i>
+                  عکس‌برداری
+                </button>
+                <button className="btn btn-danger" onClick={closeModal}>
+                  <i className="nc-icon nc-simple-remove ml-2"></i>
+                  بستن
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
