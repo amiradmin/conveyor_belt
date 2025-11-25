@@ -1,9 +1,3 @@
-/*!
-=========================================================
-* Conveyor Monitoring Dashboard Sidebar (Custom)
-=========================================================
-*/
-
 import Dashboard from "views/Dashboard.js";
 import ConveyorBelt from "views/ConveyorBelt.js";
 import Cameras from "views/Cameras.js";

@@ -4,15 +4,15 @@
 * Light Bootstrap Dashboard React - v2.0.1
 =========================================================
 
-* Product Page: https://www.creative-tim.com/product/light-bootstrap-dashboard-react
-* Copyright 2022 Creative Tim (https://www.creative-tim.com)
-* Licensed under MIT (https://github.com/creativetimofficial/light-bootstrap-dashboard-react/blob/master/LICENSE.md)
+* صفحه محصول: https://www.creative-tim.com/product/light-bootstrap-dashboard-react
+* کپی رایت ۲۰۲۲ Creative Tim (https://www.creative-tim.com)
+* دارای مجوز MIT (https://github.com/creativetimofficial/light-bootstrap-dashboard-react/blob/master/LICENSE.md)
 
-* Coded by Creative Tim
+* توسعه داده شده توسط Creative Tim
 
 =========================================================
 
-* The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+* اطلاعیه کپی رایت فوق و این اطلاعیه مجوز باید در تمام کپی‌ها یا بخش‌های قابل توجه نرم‌افزار گنجانده شود.
 
 */
 import React, { Component } from "react";
@@ -41,8 +41,9 @@ function Header() {
         return routes[i].name;
       }
     }
-    return "Brand";
+    return "اسمارت بلت";
   };
+
   return (
     <Navbar bg="light" expand="lg">
       <Container fluid>
@@ -77,7 +78,7 @@ function Header() {
                 className="m-0"
               >
                 <i className="nc-icon nc-palette"></i>
-                <span className="d-lg-none ml-1">Dashboard1</span>
+                <span className="d-lg-none ml-1">داشبورد</span>
               </Nav.Link>
             </Nav.Item>
             <Dropdown as={Nav.Item}>
@@ -89,39 +90,39 @@ function Header() {
                 className="m-0"
               >
                 <i className="nc-icon nc-planet"></i>
-                <span className="notification">5</span>
-                <span className="d-lg-none ml-1">Notification</span>
+                <span className="notification">۵</span>
+                <span className="d-lg-none ml-1">اعلان‌ها</span>
               </Dropdown.Toggle>
               <Dropdown.Menu>
                 <Dropdown.Item
                   href="#pablo"
                   onClick={(e) => e.preventDefault()}
                 >
-                  Notification 1
+                  اعلان ۱
                 </Dropdown.Item>
                 <Dropdown.Item
                   href="#pablo"
                   onClick={(e) => e.preventDefault()}
                 >
-                  Notification 2
+                  اعلان ۲
                 </Dropdown.Item>
                 <Dropdown.Item
                   href="#pablo"
                   onClick={(e) => e.preventDefault()}
                 >
-                  Notification 3
+                  اعلان ۳
                 </Dropdown.Item>
                 <Dropdown.Item
                   href="#pablo"
                   onClick={(e) => e.preventDefault()}
                 >
-                  Notification 4
+                  اعلان ۴
                 </Dropdown.Item>
                 <Dropdown.Item
                   href="#pablo"
                   onClick={(e) => e.preventDefault()}
                 >
-                  Another notification
+                  اعلان دیگر
                 </Dropdown.Item>
               </Dropdown.Menu>
             </Dropdown>
@@ -132,7 +133,7 @@ function Header() {
                 onClick={(e) => e.preventDefault()}
               >
                 <i className="nc-icon nc-zoom-split"></i>
-                <span className="d-lg-block"> Search</span>
+                <span className="d-lg-block"> جستجو</span>
               </Nav.Link>
             </Nav.Item>
           </Nav>
@@ -143,7 +144,7 @@ function Header() {
                 href="#pablo"
                 onClick={(e) => e.preventDefault()}
               >
-                <span className="no-icon">Account</span>
+                <span className="no-icon">حساب کاربری</span>
               </Nav.Link>
             </Nav.Item>
             <Dropdown as={Nav.Item}>
@@ -156,39 +157,39 @@ function Header() {
                 variant="default"
                 className="m-0"
               >
-                <span className="no-icon">Dropdown</span>
+                <span className="no-icon">منو</span>
               </Dropdown.Toggle>
               <Dropdown.Menu aria-labelledby="navbarDropdownMenuLink">
                 <Dropdown.Item
                   href="#pablo"
                   onClick={(e) => e.preventDefault()}
                 >
-                  Action
+                  عملیات
                 </Dropdown.Item>
                 <Dropdown.Item
                   href="#pablo"
                   onClick={(e) => e.preventDefault()}
                 >
-                  Another action
+                  عملیات دیگر
                 </Dropdown.Item>
                 <Dropdown.Item
                   href="#pablo"
                   onClick={(e) => e.preventDefault()}
                 >
-                  Something
+                  موردی
                 </Dropdown.Item>
                 <Dropdown.Item
                   href="#pablo"
                   onClick={(e) => e.preventDefault()}
                 >
-                  Something else here
+                  مورد دیگر
                 </Dropdown.Item>
                 <div className="divider"></div>
                 <Dropdown.Item
                   href="#pablo"
                   onClick={(e) => e.preventDefault()}
                 >
-                  Separated link
+                  لینک جدا شده
                 </Dropdown.Item>
               </Dropdown.Menu>
             </Dropdown>
@@ -198,7 +199,7 @@ function Header() {
                 href="#pablo"
                 onClick={(e) => e.preventDefault()}
               >
-                <span className="no-icon">Log out</span>
+                <span className="no-icon">خروج</span>
               </Nav.Link>
             </Nav.Item>
           </Nav>
