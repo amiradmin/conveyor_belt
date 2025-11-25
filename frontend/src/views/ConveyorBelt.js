@@ -274,6 +274,7 @@ export default function ConveyorBelt() {
                       <button
                         className="btn btn-primary"
                         onClick={() => handleViewConveyor(conveyor)}
+                        style={{marginLeft:"5px"}}
                       >
                         مشاهده
                       </button>
