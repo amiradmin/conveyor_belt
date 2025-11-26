@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'camera',
     'corsheaders',
     "channels",
+    "lab",
 ]
 
 MIDDLEWARE = [
