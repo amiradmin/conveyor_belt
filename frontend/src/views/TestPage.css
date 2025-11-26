@@ -1,0 +1,104 @@
+.page-container {
+  max-width: 1200px;
+  margin: 40px auto;
+  padding: 20px;
+  font-family: "Inter", sans-serif;
+  text-align: center;
+  color: #fff;
+  background: #111;
+  border-radius: 12px;
+}
+
+.page-title {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 20px;
+  color: #0aff99;
+  text-shadow: 0 0 12px rgba(0, 255, 136, 0.7);
+}
+
+.controls {
+  margin-bottom: 20px;
+}
+
+.btn {
+  padding: 12px 28px;
+  font-size: 1rem;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.25s ease;
+  margin: 0 5px;
+}
+
+.btn-start {
+  background: #00ff88;
+  color: #101010;
+}
+
+.btn-start:hover {
+  background: #0aff99;
+  transform: scale(1.05);
+}
+
+.btn-stop {
+  background: #ff4444;
+  color: #fff;
+}
+
+.btn-stop:hover {
+  background: #ff5555;
+  transform: scale(1.05);
+}
+
+.video-container {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 30px;
+  margin-top: 20px;
+}
+
+.video-card {
+  position: relative;
+  width: 480px;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 0 30px rgba(0, 255, 136, 0.2);
+}
+
+video,
+canvas {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.features-box {
+  margin-top: 20px;
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 15px;
+}
+
+.mug-features {
+  background: rgba(0, 255, 136, 0.2);
+  padding: 12px 18px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 255, 136, 0.5);
+  text-align: left;
+  min-width: 200px;
+}
+
+.status-text {
+  margin-top: 15px;
+  font-weight: 600;
+  color: #0aff99;
+}
+
+.mug-features p:last-child {
+  font-weight: 700;
+  color: #ffcc00; /* temperature highlight */
+}
