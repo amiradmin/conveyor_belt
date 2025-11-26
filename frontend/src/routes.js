@@ -4,6 +4,7 @@ import Cameras from "views/Cameras.js";
 import Radars from "views/Radars.js";
 import Ultrasonic from "views/Ultrasonic.js";
 import Settings from "views/Settings.js";
+import TestPage from "views/TestPage.js";
 
 const dashboardRoutes = [
   {
@@ -46,6 +47,13 @@ const dashboardRoutes = [
     name: "تنظیمات",
     icon: "nc-icon nc-settings",
     component: Settings,
+    layout: "/admin",
+  },
+    {
+    path: "/testpage",
+    name: "تست",
+    icon: "nc-icon nc-settings",
+    component: TestPage,
     layout: "/admin",
   },
 ];
