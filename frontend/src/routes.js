@@ -5,6 +5,7 @@ import Radars from "views/Radars.js";
 import Ultrasonic from "views/Ultrasonic.js";
 import Settings from "views/Settings.js";
 import TestPage from "views/TestPage.js";
+import ConveyorMonitoringPage from "views/ConveyorMonitoringPage.js";
 
 const dashboardRoutes = [
   {
@@ -54,6 +55,12 @@ const dashboardRoutes = [
     name: "تست",
     icon: "nc-icon nc-settings",
     component: TestPage,
+    layout: "/admin",
+  },  {
+    path: "/testconveyor",
+    name: "تست",
+    icon: "nc-icon nc-settings",
+    component: ConveyorMonitoringPage,
     layout: "/admin",
   },
 ];
