@@ -248,7 +248,7 @@ export default function TestPage() {
   };
 
   const drawConfidenceText = (ctx, x1, y1, width, confidence, data) => {
-    const confidenceText = `Mug: ${(confidence * 100).toFixed(1)}%`;
+    const confidenceText = `لیوان: ${(confidence * 100).toFixed(1)}%`;
     const textWidth = ctx.measureText(confidenceText).width;
 
     // Background for text
@@ -262,7 +262,7 @@ export default function TestPage() {
 
     // Additional info if available
     if (data.fillPercent !== undefined) {
-      const infoText = `Fill: ${data.fillPercent}% | Temp: ${data.temperature}°C`;
+      const infoText = `میزان پر بودن: ${data.fillPercent}% | دما: ${data.temperature}°C`;
       const infoWidth = ctx.measureText(infoText).width;
       const y2 = y1 + (data.height || (data.bbox ? data.bbox[3] - data.bbox[1] : height));
 
@@ -279,39 +279,39 @@ export default function TestPage() {
 
   return (
     <div className="page-container">
-      <h1 className="page-title">☕ Mug Detection + Fill + Temp</h1>
+      <h1 className="page-title">☕ تشخیص لیوان + میزان پر بودن + دما</h1>
       <div className="controls">
         {!streamActive ? (
-          <button className="btn btn-start" onClick={startWebcam}>Start Webcam</button>
+          <button className="btn btn-start" onClick={startWebcam}>شروع دوربین</button>
         ) : (
-          <button className="btn btn-stop" onClick={stopWebcam}>Stop Webcam</button>
+          <button className="btn btn-stop" onClick={stopWebcam}>توقف دوربین</button>
         )}
       </div>
-
-
 
       <div className="video-container">
         <div className="video-card">
           <video ref={videoRef} autoPlay muted playsInline />
-          <h3>Camera Feed</h3>
+          <h3>تصویر دوربین</h3>
         </div>
         <div className="video-card">
           <canvas ref={canvasRefEdge} />
-          <h3>Mug Detection with Edges</h3>
+          <h3>تشخیص لبه‌های لیوان</h3>
         </div>
       </div>
 
       <canvas ref={canvasRefHidden} style={{ display: "none" }} />
-    <br />
+
+      <br />
+
       {detections.length > 0 && (
         <div className="features-box">
           {detections.map((d, i) => (
             <div key={i} className="mug-features">
-              <p>Confidence: <strong>{(d.confidence * 100).toFixed(1)}%</strong></p>
-              <p>Fill Level: <strong>{d.fillPercent}%</strong></p>
-              <p>Width: {d.width}px, Height: {d.height}px</p>
-              <p>Aspect Ratio: {d.aspectRatio}</p>
-              <p>Estimated Temp: <strong>{d.temperature}°C</strong></p>
+              <p>میزان اطمینان: <strong>{(d.confidence * 100).toFixed(1)}%</strong></p>
+              <p>میزان پر بودن: <strong>{d.fillPercent}%</strong></p>
+              <p>عرض: {d.width}px, ارتفاع: {d.height}px</p>
+              <p>نسبت ابعاد: {d.aspectRatio}</p>
+              <p>دمای تخمینی: <strong>{d.temperature}°C</strong></p>
             </div>
           ))}
         </div>
