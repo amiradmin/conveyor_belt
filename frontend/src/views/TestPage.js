@@ -302,7 +302,7 @@ export default function TestPage() {
       </div>
 
       <canvas ref={canvasRefHidden} style={{ display: "none" }} />
-
+    <br />
       {detections.length > 0 && (
         <div className="features-box">
           {detections.map((d, i) => (
@@ -317,7 +317,7 @@ export default function TestPage() {
         </div>
       )}
 
-      <p className="status-text">Status: {status}</p>
+
     </div>
   );
 }
