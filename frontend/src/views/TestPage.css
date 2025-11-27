@@ -102,3 +102,13 @@ canvas {
   font-weight: 700;
   color: #ffcc00; /* temperature highlight */
 }
+/* Add this to your existing CSS for better text visibility */
+.video-card canvas {
+  background: #000;
+  border: 2px solid #00ff88;
+}
+
+.mug-features p strong {
+  color: #00ff88;
+  font-weight: bold;
+}

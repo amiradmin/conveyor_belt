@@ -12,6 +12,7 @@ export default function TestPage() {
   const [streamActive, setStreamActive] = useState(false);
   const [detections, setDetections] = useState([]);
   const [status, setStatus] = useState("");
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     return () => stopWebcam();
@@ -26,7 +27,6 @@ export default function TestPage() {
 
       const interval = setInterval(() => {
         captureAndSendFrame();
-        drawEdgeWithYOLO();
       }, 200);
 
       videoRef.current._intervalId = interval;
@@ -44,6 +44,7 @@ export default function TestPage() {
     if (videoRef.current && videoRef.current._intervalId) clearInterval(videoRef.current._intervalId);
     setStreamActive(false);
     setStatus("دوربین متوقف شد");
+    setDetections([]);
   };
 
   const captureAndSendFrame = async () => {
@@ -55,6 +56,8 @@ export default function TestPage() {
     canvas.height = H;
     const ctx = canvas.getContext("2d");
     ctx.drawImage(videoRef.current, 0, 0, W, H);
+
+    setLoading(true);
 
     canvas.toBlob(async (blob) => {
       if (!blob) return;
@@ -113,47 +116,165 @@ export default function TestPage() {
 
         setDetections(data.bbox ? [{ ...data, ...extraFeatures }] : []);
         setStatus("تشخیص انجام شد");
+
+        // Draw the detection immediately after receiving data
+        drawMugWithEdges(data);
       } catch (err) {
         console.error("Detect error:", err);
         setStatus("خطا در پردازش تصویر");
+      } finally {
+        setLoading(false);
       }
     }, "image/jpeg", 0.8);
   };
 
-  const getColorByConfidence = (conf) => conf >= 0.8 ? "rgba(0,255,0,0.9)" : conf >= 0.5 ? "rgba(255,255,0,0.9)" : "rgba(255,0,0,0.9)";
-
-  const drawEdgeWithYOLO = () => {
-    if (!videoRef.current || !canvasRefEdge.current || !window.cv) return;
+  const drawMugWithEdges = (detectionData) => {
+    if (!videoRef.current || !canvasRefEdge.current) return;
 
     const video = videoRef.current;
     const canvas = canvasRefEdge.current;
     const W = video.videoWidth, H = video.videoHeight;
     canvas.width = W; canvas.height = H;
 
-    const tmpCanvas = document.createElement("canvas");
-    tmpCanvas.width = W; tmpCanvas.height = H;
-    tmpCanvas.getContext("2d").drawImage(video, 0, 0, W, H);
-
-    const src = cv.matFromImageData(tmpCanvas.getContext("2d").getImageData(0, 0, W, H));
-    const gray = new cv.Mat(), edges = new cv.Mat();
-    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
-    cv.Canny(gray, edges, 50, 150);
-    cv.imshow(canvas, edges);
-
     const ctx = canvas.getContext("2d");
-    detections.forEach(d => {
-      const [x1, y1, x2, y2] = d.bbox;
-      const color = getColorByConfidence(d.confidence);
-      ctx.strokeStyle = color; ctx.lineWidth = 3;
-      ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
 
-      const label = `Mug ${(d.confidence * 100).toFixed(1)}% | Fill: ${d.fillPercent}% | Temp: ${d.temperature}°C`;
-      ctx.font = "16px sans-serif"; ctx.fillStyle = color;
-      ctx.fillRect(x1, y1 - 22, ctx.measureText(label).width + 6, 20);
-      ctx.fillStyle = "#000"; ctx.fillText(label, x1 + 3, y1 - 6);
-    });
+    // Clear canvas and draw video frame
+    ctx.clearRect(0, 0, W, H);
+    ctx.drawImage(video, 0, 0, W, H);
 
-    src.delete(); gray.delete(); edges.delete();
+    // Draw detection if available
+    if (detectionData.bbox) {
+      const [x1, y1, x2, y2] = detectionData.bbox;
+      const width = x2 - x1;
+      const height = y2 - y1;
+      const confidence = detectionData.confidence;
+
+      // If OpenCV is available, detect and draw mug edges/contours
+      if (window.cv) {
+        try {
+          // Extract mug region from video
+          const mugCanvas = document.createElement("canvas");
+          mugCanvas.width = width;
+          mugCanvas.height = height;
+          const mugCtx = mugCanvas.getContext("2d");
+          mugCtx.drawImage(video, x1, y1, width, height, 0, 0, width, height);
+
+          // Convert to OpenCV mat
+          const src = cv.matFromImageData(mugCtx.getImageData(0, 0, width, height));
+          const gray = new cv.Mat();
+          const edges = new cv.Mat();
+
+          // Convert to grayscale and detect edges
+          cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+          cv.Canny(gray, edges, 50, 150, 3, false);
+
+          // Find contours from edges
+          const contours = new cv.MatVector();
+          const hierarchy = new cv.Mat();
+          cv.findContours(edges, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+          // Draw green contours on the main canvas
+          ctx.strokeStyle = "#00FF00";
+          ctx.lineWidth = 3;
+          ctx.fillStyle = "rgba(0, 255, 0, 0.1)";
+
+          // Find and draw the largest contour (likely the mug)
+          let largestContour = null;
+          let maxArea = 0;
+
+          for (let i = 0; i < contours.size(); i++) {
+            const contour = contours.get(i);
+            const area = cv.contourArea(contour);
+            if (area > maxArea) {
+              maxArea = area;
+              largestContour = contour;
+            }
+          }
+
+          // Draw the largest contour (mug edges)
+          if (largestContour && maxArea > 500) { // Filter small contours
+            ctx.beginPath();
+            const points = [];
+
+            // Convert contour points to canvas coordinates
+            for (let j = 0; j < largestContour.data32S.length; j += 2) {
+              const x = largestContour.data32S[j] + x1;
+              const y = largestContour.data32S[j + 1] + y1;
+              points.push({x, y});
+
+              if (j === 0) {
+                ctx.moveTo(x, y);
+              } else {
+                ctx.lineTo(x, y);
+              }
+            }
+            ctx.closePath();
+            ctx.stroke();
+
+            // Optional: Fill with light green
+            // ctx.fill();
+          } else {
+            // Fallback: draw bounding box if no good contours found
+            drawBoundingBox(ctx, x1, y1, width, height, confidence, detectionData);
+          }
+
+          // Clean up
+          src.delete();
+          gray.delete();
+          edges.delete();
+          contours.delete();
+          hierarchy.delete();
+
+        } catch (error) {
+          console.warn("Edge detection failed, using bounding box:", error);
+          // Fallback to bounding box
+          drawBoundingBox(ctx, x1, y1, width, height, confidence, detectionData);
+        }
+      } else {
+        // OpenCV not available, use bounding box
+        drawBoundingBox(ctx, x1, y1, width, height, confidence, detectionData);
+      }
+    }
+  };
+
+  const drawBoundingBox = (ctx, x1, y1, width, height, confidence, data) => {
+    // Draw green bounding box
+    ctx.strokeStyle = "#00FF00";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x1, y1, width, height);
+
+    // Draw confidence text
+    drawConfidenceText(ctx, x1, y1, width, confidence, data);
+  };
+
+  const drawConfidenceText = (ctx, x1, y1, width, confidence, data) => {
+    const confidenceText = `Mug: ${(confidence * 100).toFixed(1)}%`;
+    const textWidth = ctx.measureText(confidenceText).width;
+
+    // Background for text
+    ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+    ctx.fillRect(x1 - 2, y1 - 25, textWidth + 4, 20);
+
+    // Confidence text
+    ctx.fillStyle = "#00FF00";
+    ctx.font = "bold 16px Arial";
+    ctx.fillText(confidenceText, x1, y1 - 8);
+
+    // Additional info if available
+    if (data.fillPercent !== undefined) {
+      const infoText = `Fill: ${data.fillPercent}% | Temp: ${data.temperature}°C`;
+      const infoWidth = ctx.measureText(infoText).width;
+      const y2 = y1 + (data.height || (data.bbox ? data.bbox[3] - data.bbox[1] : height));
+
+      // Background for info text
+      ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+      ctx.fillRect(x1 - 2, y2 + 5, infoWidth + 4, 20);
+
+      // Info text
+      ctx.fillStyle = "#00FF00";
+      ctx.font = "14px Arial";
+      ctx.fillText(infoText, x1, y2 + 20);
+    }
   };
 
   return (
@@ -167,9 +288,17 @@ export default function TestPage() {
         )}
       </div>
 
+
+
       <div className="video-container">
-        <div className="video-card"><video ref={videoRef} autoPlay muted playsInline /><h3>Camera Feed</h3></div>
-        <div className="video-card"><canvas ref={canvasRefEdge} /><h3>Edge + Mug Features</h3></div>
+        <div className="video-card">
+          <video ref={videoRef} autoPlay muted playsInline />
+          <h3>Camera Feed</h3>
+        </div>
+        <div className="video-card">
+          <canvas ref={canvasRefEdge} />
+          <h3>Mug Detection with Edges</h3>
+        </div>
       </div>
 
       <canvas ref={canvasRefHidden} style={{ display: "none" }} />
@@ -178,11 +307,11 @@ export default function TestPage() {
         <div className="features-box">
           {detections.map((d, i) => (
             <div key={i} className="mug-features">
-              <p>Confidence: {(d.confidence * 100).toFixed(1)}%</p>
-              <p>Fill Level: {d.fillPercent}%</p>
+              <p>Confidence: <strong>{(d.confidence * 100).toFixed(1)}%</strong></p>
+              <p>Fill Level: <strong>{d.fillPercent}%</strong></p>
               <p>Width: {d.width}px, Height: {d.height}px</p>
               <p>Aspect Ratio: {d.aspectRatio}</p>
-              <p>Estimated Temp: {d.temperature}°C</p>
+              <p>Estimated Temp: <strong>{d.temperature}°C</strong></p>
             </div>
           ))}
         </div>
