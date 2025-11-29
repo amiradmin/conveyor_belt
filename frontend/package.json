@@ -4,6 +4,7 @@
   "dependencies": {
     "@fortawesome/fontawesome-free": "5.15.2",
     "ajv": "^8.16.0",
+    "axios": "^1.13.2",
     "bootstrap": "4.6.0",
     "bootstrap-rtl": "^3.3.4",
     "chartist": "0.11.4",

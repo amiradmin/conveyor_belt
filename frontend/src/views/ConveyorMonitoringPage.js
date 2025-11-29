@@ -8,14 +8,18 @@ export default function ConveyorMonitoringPage() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const fileInputRef = useRef(null);
+  const animationRef = useRef(null);
+  const processingRef = useRef(false);
+  const lastProcessTimeRef = useRef(0);
 
   const [streamActive, setStreamActive] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [analysisData, setAnalysisData] = useState(null);
   const [status, setStatus] = useState("آماده به کار");
   const [useLiveCamera, setUseLiveCamera] = useState(true);
+  const [frameCount, setFrameCount] = useState(0);
+  const [processingRate, setProcessingRate] = useState(0);
 
-  // Initialize with default values
   const defaultAnalysisData = {
     object_count: 0,
     belt_speed: 0,
@@ -29,6 +33,9 @@ export default function ConveyorMonitoringPage() {
     setAnalysisData(defaultAnalysisData);
     return () => {
       if (streamActive) stopWebcam();
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
     };
   }, []);
 
@@ -41,111 +48,331 @@ export default function ConveyorMonitoringPage() {
       await videoRef.current.play();
       setStreamActive(true);
       setStatus("دوربین فعال - در حال نظارت");
-
-      // Start processing frames
-      const interval = setInterval(() => {
-        if (useLiveCamera) {
-          processFrame();
-        }
-      }, 1000);
-
-      videoRef.current._intervalId = interval;
+      startAnimationLoop();
     } catch (err) {
       console.error("خطا در دوربین:", err);
       setStatus("خطا در دسترسی به دوربین");
     }
   };
 
-  const stopWebcam = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      videoRef.current.srcObject.getTracks().forEach((t) => t.stop());
-      videoRef.current.srcObject = null;
-    }
-    if (videoRef.current && videoRef.current._intervalId) {
-      clearInterval(videoRef.current._intervalId);
-    }
-    setStreamActive(false);
-    setStatus("دوربین متوقف شد");
-    setAnalysisData(defaultAnalysisData);
+  const startAnimationLoop = () => {
+    let lastTimestamp = 0;
+    const processInterval = 300;
+
+    const animate = (timestamp) => {
+      if (!canvasRef.current || !videoRef.current) {
+        animationRef.current = requestAnimationFrame(animate);
+        return;
+      }
+
+      drawLiveVideoWithGreenContours();
+
+      if (timestamp - lastProcessTimeRef.current > processInterval && !processingRef.current) {
+        lastProcessTimeRef.current = timestamp;
+        processFrame();
+      }
+
+      if (timestamp - lastTimestamp > 1000) {
+        const rate = Math.round((frameCount / ((timestamp - lastTimestamp) / 1000)) * 10) / 10;
+        setProcessingRate(rate);
+        lastTimestamp = timestamp;
+        setFrameCount(0);
+      }
+
+      setFrameCount(prev => prev + 1);
+      animationRef.current = requestAnimationFrame(animate);
+    };
+
+    animationRef.current = requestAnimationFrame(animate);
   };
 
-  const drawStoneContour = (ctx, x, y, width, height, color) => {
-    // Draw a more natural-looking contour around the stone
-    ctx.strokeStyle = color;
+  const drawLiveVideoWithGreenContours = () => {
+    if (!canvasRef.current || !videoRef.current) return;
+
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    const video = videoRef.current;
+
+    if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+    }
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const { width, height } = canvas;
+
+    drawConveyorROI(ctx, width, height);
+    drawMovingConveyorEffects(ctx, width, height);
+
+    if (analysisData && analysisData.objects) {
+      drawGreenContours(ctx, analysisData.objects);
+      drawObjectLabels(ctx, analysisData.objects);
+    }
+
+    drawHUD(ctx, analysisData || defaultAnalysisData);
+  };
+
+  const drawGreenContours = (ctx, objects) => {
+    objects.forEach((obj, index) => {
+      const { contour_points, bbox, type } = obj;
+
+      if (contour_points && contour_points.length > 2) {
+        // Draw green contour around the object
+        ctx.strokeStyle = "#00FF00"; // Bright green
+        ctx.lineWidth = 3;
+        ctx.shadowColor = "#00FF00";
+        ctx.shadowBlur = 10;
+
+        ctx.beginPath();
+
+        // Move to first point
+        ctx.moveTo(contour_points[0][0], contour_points[0][1]);
+
+        // Draw lines to all other points
+        for (let i = 1; i < contour_points.length; i++) {
+          ctx.lineTo(contour_points[i][0], contour_points[i][1]);
+        }
+
+        // Close the contour
+        ctx.closePath();
+        ctx.stroke();
+
+        // Remove shadow for other elements
+        ctx.shadowBlur = 0;
+
+        // Draw filled area with slight transparency
+        ctx.fillStyle = "rgba(0, 255, 0, 0.1)";
+        ctx.fill();
+
+        // Draw inner edge for better visibility
+        ctx.strokeStyle = "#00CC00";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      } else {
+        // Fallback: draw rectangle if no contour points
+        const [x1, y1, x2, y2] = bbox;
+        ctx.strokeStyle = "#00FF00";
+        ctx.lineWidth = 3;
+        ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+      }
+
+      // Draw center point
+      const centerX = obj.center_x || (bbox[0] + bbox[2]) / 2;
+      const centerY = obj.center_y || (bbox[1] + bbox[3]) / 2;
+
+      ctx.fillStyle = "#00FF00";
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, 4, 0, 2 * Math.PI);
+      ctx.fill();
+    });
+  };
+
+  const drawObjectLabels = (ctx, objects) => {
+    const currentTime = Date.now();
+
+    objects.forEach((obj, index) => {
+      const [x1, y1, x2, y2] = obj.bbox;
+      const width = x2 - x1;
+      const confidence = (obj.confidence * 100).toFixed(1);
+
+      const time = currentTime * 0.002 + index;
+      const bounce = Math.sin(time * 3) * 2;
+
+      // Type text in Persian
+      let typeText;
+      switch (obj.type) {
+        case "large": typeText = "سنگ بزرگ"; break;
+        case "medium": typeText = "سنگ متوسط"; break;
+        default: typeText = "سنگ کوچک"; break;
+      }
+
+      const label = `${typeText} ${confidence}%`;
+      const textWidth = ctx.measureText(label).width;
+
+      // Label background
+      ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+      ctx.fillRect(x1 - 3, y1 - 30 + bounce, textWidth + 6, 24);
+
+      // Label border
+      ctx.strokeStyle = "#00FF00";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x1 - 3, y1 - 30 + bounce, textWidth + 6, 24);
+
+      // Label text
+      ctx.fillStyle = "#00FF00";
+      ctx.font = "bold 14px Arial";
+      ctx.fillText(label, x1, y1 - 12 + bounce);
+
+      // Size indicator
+      const sizeText = `${Math.round(width)}px`;
+      ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+      const sizeWidth = ctx.measureText(sizeText).width;
+      ctx.fillRect(x2 - sizeWidth - 4, y2 + 5, sizeWidth + 4, 18);
+      ctx.fillStyle = "#FFFFFF";
+      ctx.font = "12px Arial";
+      ctx.fillText(sizeText, x2 - sizeWidth - 2, y2 + 18);
+    });
+  };
+
+  const drawConveyorROI = (ctx, width, height) => {
+    const beltX = width * 0.1;
+    const beltY = height * 0.3;
+    const beltWidth = width * 0.8;
+    const beltHeight = height * 0.4;
+
+    ctx.fillStyle = "rgba(50, 50, 50, 0.2)";
+    ctx.fillRect(beltX, beltY, beltWidth, beltHeight);
+
+    ctx.strokeStyle = "rgba(0, 255, 255, 0.8)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([10, 5]);
+    ctx.strokeRect(beltX, beltY, beltWidth, beltHeight);
+    ctx.setLineDash([]);
+  };
+
+  const drawMovingConveyorEffects = (ctx, width, height) => {
+    const beltX = width * 0.1;
+    const beltY = height * 0.3;
+    const beltWidth = width * 0.8;
+    const beltHeight = height * 0.4;
+
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
     ctx.lineWidth = 2;
 
-    // Create irregular contour (like a stone shape)
-    ctx.beginPath();
+    const lineSpacing = 25;
+    const movement = (Date.now() * 0.1) % lineSpacing;
 
-    // Start from top-left with some randomness
-    ctx.moveTo(x + width * 0.1, y + height * 0.1);
-
-    // Top edge with irregularities
-    ctx.lineTo(x + width * 0.3, y + height * 0.05);
-    ctx.lineTo(x + width * 0.7, y + height * 0.08);
-    ctx.lineTo(x + width * 0.9, y + height * 0.15);
-
-    // Right edge
-    ctx.lineTo(x + width * 0.95, y + height * 0.4);
-    ctx.lineTo(x + width * 0.9, y + height * 0.7);
-    ctx.lineTo(x + width * 0.85, y + height * 0.9);
-
-    // Bottom edge
-    ctx.lineTo(x + width * 0.6, y + height * 0.95);
-    ctx.lineTo(x + width * 0.3, y + height * 0.9);
-    ctx.lineTo(x + width * 0.15, y + height * 0.8);
-
-    // Left edge
-    ctx.lineTo(x + width * 0.05, y + height * 0.6);
-    ctx.lineTo(x + width * 0.1, y + height * 0.3);
-
-    ctx.closePath();
-    ctx.stroke();
-
-    // Add some internal texture lines to make it look like a stone
-    ctx.strokeStyle = color + "80"; // Semi-transparent
-    ctx.lineWidth = 1;
-
-    // Internal cracks/features
-    ctx.beginPath();
-    ctx.moveTo(x + width * 0.3, y + height * 0.3);
-    ctx.lineTo(x + width * 0.5, y + height * 0.4);
-    ctx.moveTo(x + width * 0.6, y + height * 0.2);
-    ctx.lineTo(x + width * 0.7, y + height * 0.5);
-    ctx.stroke();
+    for (let y = beltY + movement; y < beltY + beltHeight; y += lineSpacing) {
+      ctx.beginPath();
+      ctx.moveTo(beltX, y);
+      ctx.lineTo(beltX + beltWidth, y);
+      ctx.stroke();
+    }
   };
 
-  const generateDemoObjects = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return [];
+  const drawHUD = (ctx, data) => {
+    const { width } = ctx.canvas;
 
-    const objects = [];
-    const numObjects = Math.floor(Math.random() * 6) + 2;
+    ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
+    ctx.fillRect(15, 15, 350, 90);
+    ctx.strokeStyle = "#00FF00";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(15, 15, 350, 90);
 
-    for (let i = 0; i < numObjects; i++) {
-      const width = Math.random() * 100 + 50;
-      const height = Math.random() * 100 + 50;
-      const x = Math.random() * (canvas.width - width - 200) + 100;
-      const y = Math.random() * (canvas.height - height - 300) + 150;
+    ctx.fillStyle = "#00FF00";
+    ctx.font = "bold 16px Arial";
+    ctx.fillText(`سرعت نوار: ${data.belt_speed} کیلومتر بر ساعت`, 30, 40);
 
-      const area = width * height;
-      let type = "small";
-      if (area > 15000) type = "large";
-      else if (area > 5000) type = "medium";
+    ctx.fillStyle = "#FFCC00";
+    ctx.font = "bold 16px Arial";
+    ctx.fillText(`تعداد سنگ‌ها: ${data.object_count}`, 30, 65);
 
-      objects.push({
-        bbox: [x, y, x + width, y + height],
-        confidence: Math.random() * 0.3 + 0.6,
-        type: type
-      });
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = "12px Arial";
+    ctx.fillText(`نرخ پردازش: ${processingRate} فریم/ثانیه`, 30, 85);
+
+    // Detection status
+    const statusText = data.object_count > 0 ? "سنگ‌ها شناسایی شدند" : "در حال جستجو...";
+    ctx.fillStyle = data.object_count > 0 ? "#00FF00" : "#FFCC00";
+    ctx.font = "bold 14px Arial";
+    ctx.fillText(statusText, width - 180, 35);
+  };
+
+  const processFrame = async () => {
+    if (!videoRef.current || processingRef.current) return;
+
+    processingRef.current = true;
+    setProcessing(true);
+
+    try {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext("2d");
+      const video = videoRef.current;
+
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0);
+
+      canvas.toBlob(async (blob) => {
+        if (!blob) {
+          processingRef.current = false;
+          setProcessing(false);
+          return;
+        }
+
+        const formData = new FormData();
+        formData.append("frame", blob, `frame_${Date.now()}.jpg`);
+
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+          const resp = await fetch(`${API_BASE_URL}/api/camera/conveyor/analyze/`, {
+            method: "POST",
+            body: formData,
+            signal: controller.signal
+          });
+
+          clearTimeout(timeoutId);
+
+          if (!resp.ok) throw new Error(await resp.text());
+          const data = await resp.json();
+
+          setAnalysisData(data);
+          setStatus(`نظارت فعال - ${data.object_count} سنگ شناسایی شد`);
+
+        } catch (err) {
+          console.error("خطا در پردازش:", err);
+          setStatus("خطا در پردازش تصویر");
+          setDemoData();
+        } finally {
+          processingRef.current = false;
+          setProcessing(false);
+        }
+      }, "image/jpeg", 0.7);
+    } catch (err) {
+      console.error("خطا در پردازش فریم:", err);
+      processingRef.current = false;
+      setProcessing(false);
     }
-
-    return objects;
   };
 
   const setDemoData = () => {
-    // Demo data for testing
-    const demoObjects = generateDemoObjects();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const demoObjects = [];
+    const numObjects = Math.floor(Math.random() * 6) + 2;
+
+    for (let i = 0; i < numObjects; i++) {
+      const objWidth = Math.random() * 100 + 40;
+      const objHeight = Math.random() * 100 + 40;
+      const x = Math.random() * (canvas.width - objWidth - 200) + 100;
+      const y = Math.random() * (canvas.height - objHeight - 300) + 150;
+
+      const area = objWidth * objHeight;
+      let type = "small";
+      if (area > 12000) type = "large";
+      else if (area > 5000) type = "medium";
+
+      // Generate contour points for demo
+      const contour_points = generateDemoContour(x, y, objWidth, objHeight);
+
+      demoObjects.push({
+        bbox: [x, y, x + objWidth, y + objHeight],
+        confidence: Math.random() * 0.3 + 0.65,
+        type: type,
+        area: area,
+        width: objWidth,
+        height: objHeight,
+        center_x: x + objWidth/2,
+        center_y: y + objHeight/2,
+        contour_points: contour_points
+      });
+    }
+
     const largeCount = demoObjects.filter(obj => obj.type === "large").length;
     const mediumCount = demoObjects.filter(obj => obj.type === "medium").length;
     const smallCount = demoObjects.filter(obj => obj.type === "small").length;
@@ -160,165 +387,39 @@ export default function ConveyorMonitoringPage() {
     };
 
     setAnalysisData(demoData);
-
-    // Also draw demo results
-    if (canvasRef.current && videoRef.current) {
-      const ctx = canvasRef.current.getContext("2d");
-      ctx.drawImage(videoRef.current, 0, 0);
-      drawAnalysisResults(ctx, demoData);
-    }
   };
 
-  const processFrame = async () => {
-    if (!videoRef.current || !canvasRef.current) return;
+  const generateDemoContour = (x, y, width, height) => {
+    const points = [];
+    const numPoints = 10;
 
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
+    for (let i = 0; i < numPoints; i++) {
+      const angle = (2 * Math.PI * i) / numPoints;
+      const radiusVariation = 0.7 + Math.random() * 0.6;
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+      const pointX = x + width/2 + (width/2 * Math.cos(angle) * radiusVariation);
+      const pointY = y + height/2 + (height/2 * Math.sin(angle) * radiusVariation);
 
-    // Draw video frame first
-    ctx.drawImage(video, 0, 0);
+      points.push([pointX, pointY]);
+    }
 
-    setProcessing(true);
-
-    canvas.toBlob(async (blob) => {
-      if (!blob) return;
-
-      const formData = new FormData();
-      formData.append("frame", blob, "conveyor_frame.jpg");
-
-      try {
-        const resp = await fetch(`${API_BASE_URL}/api/camera/conveyor/analyze/`, {
-          method: "POST",
-          body: formData,
-        });
-
-        if (!resp.ok) throw new Error(await resp.text());
-        const data = await resp.json();
-
-        // Ensure all required fields exist
-        const processedData = {
-          object_count: data.object_count || 0,
-          belt_speed: data.belt_speed || 0,
-          large_count: data.large_count || 0,
-          medium_count: data.medium_count || 0,
-          small_count: data.small_count || 0,
-          objects: data.objects || []
-        };
-
-        setAnalysisData(processedData);
-        drawAnalysisResults(ctx, processedData);
-        setStatus(`نظارت فعال - ${processedData.object_count} مواد شناسایی شد`);
-
-      } catch (err) {
-        console.error("خطا در پردازش:", err);
-        setStatus("خطا در پردازش تصویر");
-        // Set demo data when backend is not available
-        setDemoData();
-      } finally {
-        setProcessing(false);
-      }
-    }, "image/jpeg", 0.8);
+    return points;
   };
 
-  const drawAnalysisResults = (ctx, data) => {
-    const { width, height } = ctx.canvas;
-
-    // Redraw the video frame to clear previous drawings
-    if (videoRef.current) {
-      ctx.drawImage(videoRef.current, 0, 0);
+  const stopWebcam = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      videoRef.current.srcObject.getTracks().forEach((t) => t.stop());
+      videoRef.current.srcObject = null;
     }
-
-    // Draw conveyor belt ROI
-    ctx.strokeStyle = "rgba(0, 255, 255, 0.8)";
-    ctx.lineWidth = 2;
-    ctx.setLineDash([5, 5]);
-    ctx.strokeRect(width * 0.1, height * 0.3, width * 0.8, height * 0.4);
-    ctx.setLineDash([]);
-
-    // Draw detected objects with contours
-    if (data.objects && data.objects.length > 0) {
-      data.objects.forEach((obj, index) => {
-        const [x1, y1, x2, y2] = obj.bbox;
-        const objWidth = x2 - x1;
-        const objHeight = y2 - y1;
-
-        // Choose color based on object type
-        let color, contourColor;
-        if (obj.type === "large") {
-          color = "#ff4444";
-          contourColor = "#ff0000";
-        } else if (obj.type === "medium") {
-          color = "#ffaa00";
-          contourColor = "#ff7700";
-        } else {
-          color = "#00ff88";
-          contourColor = "#00cc66";
-        }
-
-        // Draw bounding box
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 3;
-        ctx.strokeRect(x1, y1, objWidth, objHeight);
-
-        // Draw contour around the object (more natural shape)
-        drawStoneContour(ctx, x1, y1, objWidth, objHeight, contourColor);
-
-        // Draw label
-        let typeText;
-        if (obj.type === "large") typeText = "سنگ بزرگ";
-        else if (obj.type === "medium") typeText = "سنگ متوسط";
-        else typeText = "سنگ کوچک";
-
-        const label = `${typeText} ${(obj.confidence * 100).toFixed(1)}%`;
-        const textWidth = ctx.measureText(label).width;
-
-        // Label background
-        ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
-        ctx.fillRect(x1 - 2, y1 - 25, textWidth + 4, 20);
-
-        // Label text
-        ctx.fillStyle = color;
-        ctx.font = "bold 14px Arial";
-        ctx.fillText(label, x1, y1 - 8);
-
-        // Draw center point
-        const centerX = x1 + objWidth / 2;
-        const centerY = y1 + objHeight / 2;
-        ctx.fillStyle = "#ffcc00";
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, 4, 0, 2 * Math.PI);
-        ctx.fill();
-
-        // Draw size indicator
-        const sizeText = `${Math.round(objWidth)}x${Math.round(objHeight)}`;
-        ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
-        ctx.fillRect(x2 - ctx.measureText(sizeText).width - 4, y2 + 2,
-                    ctx.measureText(sizeText).width + 4, 16);
-        ctx.fillStyle = "#ffffff";
-        ctx.font = "12px Arial";
-        ctx.fillText(sizeText, x2 - ctx.measureText(sizeText).width - 2, y2 + 14);
-      });
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current);
     }
-
-    // Draw belt speed indicator
-    const speedText = `سرعت نوار: ${data.belt_speed} کیلومتر بر ساعت`;
-    ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
-    ctx.fillRect(10, 10, ctx.measureText(speedText).width + 10, 25);
-    ctx.fillStyle = "#00ff88";
-    ctx.font = "bold 16px Arial";
-    ctx.fillText(speedText, 15, 28);
-
-    // Draw object count
-    const countText = `تعداد مواد: ${data.object_count}`;
-    ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
-    ctx.fillRect(10, 40, ctx.measureText(countText).width + 10, 25);
-    ctx.fillStyle = "#ffcc00";
-    ctx.font = "bold 16px Arial";
-    ctx.fillText(countText, 15, 58);
+    setStreamActive(false);
+    setStatus("دوربین متوقف شد");
+    setAnalysisData(defaultAnalysisData);
+    setFrameCount(0);
+    setProcessingRate(0);
+    processingRef.current = false;
   };
 
   const handleFileUpload = (event) => {
@@ -327,13 +428,14 @@ export default function ConveyorMonitoringPage() {
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
 
     const url = URL.createObjectURL(file);
     video.src = url;
     video.onloadeddata = () => {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+      startAnimationLoop();
       processFrame();
     };
   };
@@ -349,7 +451,7 @@ export default function ConveyorMonitoringPage() {
     <div className="conveyor-page">
       <div className="conveyor-header">
         <h1 className="page-title">🚛 سیستم نظارت بر نوار نقاله</h1>
-        <p className="page-subtitle">Conti LoadSense - مانیتورینگ هوشمند مواد معدنی</p>
+        <p className="page-subtitle">تشخیص سنگ‌ها با کانتور سبز رنگ</p>
       </div>
 
       <div className="controls-panel">
@@ -400,12 +502,12 @@ export default function ConveyorMonitoringPage() {
               playsInline
               className="conveyor-video"
             />
-            <h3>📹 ورودی ویدیو</h3>
+            <h3>📹 ورودی ویدیو خام</h3>
           </div>
 
           <div className="video-card">
-            <canvas ref={canvasRef} className="conveyor-canvas" />
-            <h3>🎯 خروجی پردازش شده با کانتور سنگ‌ها</h3>
+            <canvas ref={canvasRef} className="conveyor-canvas live-output" />
+            <h3>🎯 ویدیو زنده با کانتور سبز</h3>
           </div>
         </div>
 
@@ -413,46 +515,56 @@ export default function ConveyorMonitoringPage() {
           <div className="analytics-panel">
             <div className="metrics-grid">
               <div className="metric-card">
-                <div className="metric-value">{analysisData.object_count}</div>
-                <div className="metric-label">تعداد مواد شناسایی شده</div>
+                <div className="metric-value" style={{color: '#00FF00'}}>
+                  {analysisData.object_count}
+                </div>
+                <div className="metric-label">تعداد سنگ‌ها</div>
+                <div className="metric-subtext">کانتور سبز</div>
               </div>
 
               <div className="metric-card">
                 <div className="metric-value">{analysisData.belt_speed}</div>
                 <div className="metric-label">کیلومتر بر ساعت</div>
+                <div className="metric-subtext">سرعت نوار</div>
               </div>
 
               <div className="metric-card">
-                <div className="metric-value">{analysisData.large_count}</div>
+                <div className="metric-value" style={{color: '#FF4444'}}>
+                  {analysisData.large_count}
+                </div>
                 <div className="metric-label">سنگ‌های بزرگ</div>
+                <div className="metric-subtext">بیش از ۱۲۰۰۰ پیکسل</div>
               </div>
 
               <div className="metric-card">
-                <div className="metric-value">{analysisData.small_count + analysisData.medium_count}</div>
+                <div className="metric-value" style={{color: '#00FF88'}}>
+                  {analysisData.small_count + analysisData.medium_count}
+                </div>
                 <div className="metric-label">سنگ‌های کوچک/متوسط</div>
+                <div className="metric-subtext">تا ۱۲۰۰۰ پیکسل</div>
               </div>
             </div>
 
             <div className="detailed-analysis">
-              <h3>📊 آنالیز دقیق</h3>
-              <div className="analysis-list">
+              <h3>📊 جزئیات شناسایی</h3>
+              <div className="objects-list">
                 {analysisData.objects?.map((obj, index) => (
                   <div key={index} className="object-item">
-                    <span className={`object-type ${obj.type}`}>
-                      {obj.type === 'large' ? 'سنگ بزرگ' :
-                       obj.type === 'medium' ? 'سنگ متوسط' : 'سنگ کوچک'}
-                    </span>
-                    <span className="object-confidence">
-                      اطمینان: {(obj.confidence * 100).toFixed(1)}%
-                    </span>
-                    <span className="object-size">
-                      اندازه: {Math.round(obj.bbox[2] - obj.bbox[0])}x{Math.round(obj.bbox[3] - obj.bbox[1])}px
-                    </span>
+                    <div className="object-header">
+                      <span className={`object-type ${obj.type}`}>
+                        {obj.type === 'large' ? 'سنگ بزرگ' :
+                         obj.type === 'medium' ? 'سنگ متوسط' : 'سنگ کوچک'}
+                      </span>
+                      <span className="object-confidence">
+                        اطمینان: {(obj.confidence * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="object-details">
+                      <span>اندازه: {Math.round(obj.width)}×{Math.round(obj.height)} پیکسل</span>
+                      <span>مساحت: {Math.round(obj.area)} پیکسل²</span>
+                    </div>
                   </div>
                 ))}
-                {(!analysisData.objects || analysisData.objects.length === 0) && (
-                  <div className="no-objects">هیچ شیئی شناسایی نشد</div>
-                )}
               </div>
             </div>
           </div>
@@ -461,9 +573,12 @@ export default function ConveyorMonitoringPage() {
 
       <div className="status-bar">
         <div className={`status-indicator ${processing ? 'processing' : 'ready'}`}>
-          {processing ? '🔄 در حال پردازش...' : '✅ آماده'}
+          {processing ? '🔄 در حال پردازش...' : '✅ سیستم فعال'}
         </div>
         <div className="status-message">{status}</div>
+        <div className="processing-info">
+          نرخ پردازش: {processingRate} فریم/ثانیه
+        </div>
       </div>
     </div>
   );
