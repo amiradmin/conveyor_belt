@@ -1,5 +1,7 @@
+# camera/views.py
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework import status
 import cv2
 import base64
 import os
@@ -10,8 +12,18 @@ from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from collections import deque
 import math
+import json
+from django.utils import timezone
+import logging
+
+logger = logging.getLogger(__name__)
+
 # Load YOLO once
-model = YOLO("yolov8n.pt")
+try:
+    model = YOLO("yolov8n.pt")
+except Exception as e:
+    logger.warning(f"Could not load YOLO model: {e}")
+    model = None
 
 
 class ConveyorAnalysisAPI(APIView):
@@ -19,40 +31,192 @@ class ConveyorAnalysisAPI(APIView):
         super().__init__()
         self.prev_positions = deque(maxlen=10)
         self.frame_count = 0
+        self.alert_cooldown = {}
 
     def post(self, request):
-        file = request.FILES.get("frame")
-        if not file:
-            return Response({"error": "No frame received"}, status=400)
+        try:
+            camera_id = request.data.get("camera_id", "default")
+            file = request.FILES.get("frame")
 
-        # Decode frame
-        img_bytes = file.read()
-        img_array = np.frombuffer(img_bytes, np.uint8)
-        frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+            if not file:
+                return Response({"error": "No frame received"}, status=400)
 
-        if frame is None:
-            return Response({"error": "Invalid image"}, status=400)
+            # Decode frame
+            img_bytes = file.read()
+            img_array = np.frombuffer(img_bytes, np.uint8)
+            frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
 
-        # Analyze objects with enhanced contour detection
-        objects_analysis = self.analyze_objects_with_contours(frame)
-        belt_analysis = self.analyze_belt_alignment(frame)
-        load_analysis = self.analyze_load_distribution(objects_analysis["objects"])
+            if frame is None:
+                return Response({"error": "Invalid image"}, status=400)
 
-        # Combine analyses
-        combined_analysis = {
-            **objects_analysis,
-            **belt_analysis,
-            **load_analysis,
-            "timestamp": self.frame_count,
-            "system_health": "good"
-        }
+            # Analyze objects with enhanced contour detection
+            objects_analysis = self.analyze_objects_with_contours(frame)
+            belt_analysis = self.analyze_belt_alignment(frame)
+            load_analysis = self.analyze_load_distribution(objects_analysis["objects"])
+            safety_analysis = self.analyze_safety_issues(frame, objects_analysis["objects"])
 
-        self.frame_count += 1
+            # Check for alerts
+            alerts = self.check_alerts(objects_analysis, belt_analysis, load_analysis, safety_analysis, camera_id)
 
-        response = Response(combined_analysis)
-        response["Access-Control-Allow-Origin"] = "*"
-        response["Access-Control-Allow-Headers"] = "*"
-        return response
+            # Combine analyses
+            combined_analysis = {
+                **objects_analysis,
+                **belt_analysis,
+                **load_analysis,
+                **safety_analysis,
+                "timestamp": self.frame_count,
+                "camera_id": camera_id,
+                "system_health": self.calculate_system_health(objects_analysis, belt_analysis, load_analysis),
+                "alerts": alerts,
+                "processing_time": timezone.now().isoformat()
+            }
+
+            self.frame_count += 1
+
+            # Send real-time update via WebSocket
+            self.send_websocket_update(combined_analysis, camera_id)
+
+            response = Response(combined_analysis)
+            response["Access-Control-Allow-Origin"] = "*"
+            response["Access-Control-Allow-Headers"] = "*"
+            return response
+
+        except Exception as e:
+            logger.error(f"Error in conveyor analysis: {str(e)}")
+            return Response({"error": "Internal server error"}, status=500)
+
+    def check_alerts(self, objects_analysis, belt_analysis, load_analysis, safety_analysis, camera_id):
+        """Check for various alert conditions"""
+        alerts = []
+        current_time = timezone.now()
+
+        # Overload alert
+        if objects_analysis["object_count"] > 15:
+            if self.can_trigger_alert("overload", camera_id):
+                alerts.append({
+                    "type": "overload",
+                    "severity": "high",
+                    "message": f"Overload detected: {objects_analysis['object_count']} objects",
+                    "belt_speed": objects_analysis["belt_speed"]
+                })
+
+        # Misalignment alert
+        if belt_analysis["alignment_score"] < 0.6:
+            if self.can_trigger_alert("misalignment", camera_id):
+                alerts.append({
+                    "type": "misalignment",
+                    "severity": "medium",
+                    "message": f"Belt misalignment detected: {belt_analysis['alignment_score']}",
+                    "centering": belt_analysis["belt_centering"]
+                })
+
+        # Load imbalance alert
+        if load_analysis["load_balance"] == "unbalanced":
+            if self.can_trigger_alert("imbalance", camera_id):
+                alerts.append({
+                    "type": "imbalance",
+                    "severity": "medium",
+                    "message": "Load imbalance detected",
+                    "distribution": load_analysis["load_distribution"]
+                })
+
+        # Safety alerts
+        for safety_alert in safety_analysis.get("safety_issues", []):
+            if self.can_trigger_alert(safety_alert["type"], camera_id):
+                alerts.append(safety_alert)
+
+        return alerts
+
+    def can_trigger_alert(self, alert_type, camera_id):
+        """Prevent alert spam with cooldown"""
+        key = f"{camera_id}_{alert_type}"
+        current_time = timezone.now()
+
+        if key in self.alert_cooldown:
+            last_trigger = self.alert_cooldown[key]
+            if (current_time - last_trigger).total_seconds() < 300:  # 5 minutes cooldown
+                return False
+
+        self.alert_cooldown[key] = current_time
+        return True
+
+    def calculate_system_health(self, objects_analysis, belt_analysis, load_analysis):
+        """Calculate overall system health score"""
+        health_score = 100
+
+        # Deduct for object overload
+        if objects_analysis["object_count"] > 15:
+            health_score -= 20
+        elif objects_analysis["object_count"] > 10:
+            health_score -= 10
+
+        # Deduct for misalignment
+        if belt_analysis["alignment_score"] < 0.7:
+            health_score -= 15
+        elif belt_analysis["alignment_score"] < 0.8:
+            health_score -= 5
+
+        # Deduct for imbalance
+        if load_analysis["load_balance"] == "unbalanced":
+            health_score -= 15
+        elif load_analysis["load_balance"] == "slightly_unbalanced":
+            health_score -= 5
+
+        if health_score >= 90:
+            return "excellent"
+        elif health_score >= 80:
+            return "good"
+        elif health_score >= 70:
+            return "fair"
+        else:
+            return "poor"
+
+    def send_websocket_update(self, analysis_data, camera_id):
+        """Send real-time updates via WebSocket"""
+        try:
+            channel_layer = get_channel_layer()
+            async_to_sync(channel_layer.group_send)(
+                f"conveyor_{camera_id}",
+                {
+                    "type": "analysis_update",
+                    "data": analysis_data
+                }
+            )
+        except Exception as e:
+            logger.error(f"WebSocket error: {str(e)}")
+
+    def analyze_safety_issues(self, frame, objects):
+        """Analyze safety issues like jams or blockages"""
+        safety_issues = []
+
+        # Check for potential jams (objects too close together)
+        for i, obj1 in enumerate(objects):
+            for j, obj2 in enumerate(objects[i + 1:], i + 1):
+                distance = math.sqrt(
+                    (obj1["center_x"] - obj2["center_x"]) ** 2 +
+                    (obj1["center_y"] - obj2["center_y"]) ** 2
+                )
+                if distance < 50:  # Objects too close
+                    safety_issues.append({
+                        "type": "potential_jam",
+                        "severity": "high",
+                        "message": "Objects too close - potential jam risk",
+                        "object1": obj1["type"],
+                        "object2": obj2["type"],
+                        "distance": round(distance, 2)
+                    })
+
+        # Check for oversized objects
+        oversized_objects = [obj for obj in objects if obj["area"] > 20000]
+        if oversized_objects:
+            safety_issues.append({
+                "type": "oversized_object",
+                "severity": "medium",
+                "message": f"Oversized object detected: {len(oversized_objects)} objects",
+                "count": len(oversized_objects)
+            })
+
+        return {"safety_issues": safety_issues}
 
     def analyze_objects_with_contours(self, frame):
         """Enhanced object detection focusing on contour/edge detection"""
@@ -307,8 +471,6 @@ class ConveyorAnalysisAPI(APIView):
         }
 
 
-
-
 class StreamFrameAPIView(APIView):
     def post(self, request):
         file = request.FILES.get("frame")
@@ -353,6 +515,7 @@ class StreamFrameAPIView(APIView):
         response["Access-Control-Allow-Methods"] = "POST, OPTIONS"
 
         return response
+
 
 class ProcessVideoFile(APIView):
     def post(self, request):
@@ -466,3 +629,100 @@ class ProcessVideoFile(APIView):
             "processed_frames_count": processed_count,
             "frames": processed_frames,
         })
+
+
+class SystemStatusAPI(APIView):
+    """API for overall system status and dashboard data"""
+
+    def get(self, request):
+        try:
+            # Get data from all cameras (in real system, this would query the database)
+            system_status = {
+                "overall_health": "good",
+                "active_cameras": 4,
+                "total_alerts": 3,
+                "critical_alerts": 1,
+                "total_throughput": 2450,
+                "average_efficiency": 94.7,
+                "uptime_percentage": 99.2,
+                "maintenance_required": 2,
+                "cameras": [
+                    {
+                        "id": "camera_1",
+                        "name": "نوار اصلی انتقال",
+                        "status": "active",
+                        "efficiency": 96.5,
+                        "object_count": 8,
+                        "belt_speed": 2.4,
+                        "last_update": timezone.now().isoformat()
+                    },
+                    {
+                        "id": "camera_2",
+                        "name": "نوار تغذیه کوره",
+                        "status": "warning",
+                        "efficiency": 78.2,
+                        "object_count": 12,
+                        "belt_speed": 1.8,
+                        "last_update": timezone.now().isoformat()
+                    }
+                ]
+            }
+
+            return Response(system_status)
+
+        except Exception as e:
+            logger.error(f"Error in system status: {str(e)}")
+            return Response({"error": "Internal server error"}, status=500)
+
+
+class HistoricalDataAPI(APIView):
+    """API for historical data and analytics"""
+
+    def get(self, request):
+        try:
+            days = int(request.GET.get('days', 7))
+
+            # Generate sample historical data
+            historical_data = self.generate_historical_data(days)
+
+            return Response(historical_data)
+
+        except Exception as e:
+            logger.error(f"Error in historical data: {str(e)}")
+            return Response({"error": "Internal server error"}, status=500)
+
+    def generate_historical_data(self, days):
+        """Generate sample historical data for analytics"""
+        data = {
+            "throughput": [],
+            "efficiency": [],
+            "alerts": [],
+            "downtime": []
+        }
+
+        base_date = timezone.now().date()
+
+        for i in range(days):
+            date = base_date - timezone.timedelta(days=i)
+
+            data["throughput"].append({
+                "date": date.isoformat(),
+                "count": random.randint(2000, 3000)
+            })
+
+            data["efficiency"].append({
+                "date": date.isoformat(),
+                "percentage": round(random.uniform(85.0, 98.0), 1)
+            })
+
+            data["alerts"].append({
+                "date": date.isoformat(),
+                "count": random.randint(0, 10)
+            })
+
+            data["downtime"].append({
+                "date": date.isoformat(),
+                "minutes": random.randint(0, 120)
+            })
+
+        return data

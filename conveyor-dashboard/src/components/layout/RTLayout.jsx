@@ -1,7 +1,20 @@
 // src/components/layout/RTLayout.jsx
 import React from 'react';
+import { Link, useLocation } from 'react-router-dom';
 
 const RTLayout = ({ children }) => {
+  const location = useLocation();
+
+  const navigation = [
+    { name: 'داشبورد', path: '/', icon: '📊' },
+    { name: 'نظارت زنده', path: '/monitoring', icon: '📹' },
+    { name: 'هشدارها', path: '/alerts', icon: '⚠️' },
+    { name: 'تجزیه و تحلیل', path: '/analytics', icon: '📈' },
+    { name: 'نقشه نوارها', path: '/map', icon: '🗺️' },
+    { name: 'گزارشات', path: '/reports', icon: '📋' },
+    { name: 'تنظیمات', path: '/settings', icon: '⚙️' },
+  ];
+
   return (
     <div dir="rtl" className="font-farsi bg-gray-50 min-h-screen">
       {/* Header */}
@@ -35,31 +48,36 @@ const RTLayout = ({ children }) => {
         {/* Sidebar - Right side */}
         <aside className="w-64 bg-gray-900 text-white min-h-screen">
           <nav className="p-4 space-y-2">
-            {[
-              { name: 'داشبورد', icon: '📊', active: true },
-              { name: 'نظارت زنده', icon: '📹' },
-              { name: 'هشدارها', icon: '⚠️' },
-              { name: 'تجزیه و تحلیل', icon: '📈' },
-              { name: 'نقشه نوارها', icon: '🗺️' },
-              { name: 'گزارشات', icon: '📋' },
-              { name: 'تنظیمات', icon: '⚙️' },
-            ].map((item) => (
-              <a
-                key={item.name}
-                href={`#${item.name.toLowerCase()}`}
-                className={`flex items-center space-x-3 space-x-reverse p-3 rounded-lg transition-colors ${
-                  item.active ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-800'
-                }`}
-              >
-                <span className="text-lg">{item.icon}</span>
-                <span>{item.name}</span>
-              </a>
-            ))}
+            {navigation.map((item) => {
+              const isActive = location.pathname === item.path;
+              return (
+                <Link
+                  key={item.name}
+                  to={item.path}
+                  className={`flex items-center space-x-3 space-x-reverse p-3 rounded-lg transition-colors ${
+                    isActive
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                  }`}
+                >
+                  <span className="text-lg">{item.icon}</span>
+                  <span>{item.name}</span>
+                </Link>
+              );
+            })}
           </nav>
+
+          {/* Status Footer */}
+          <div className="p-4 border-t border-gray-700 mt-auto">
+            <div className="flex items-center">
+              <div className="w-3 h-3 bg-green-400 rounded-full mr-2"></div>
+              <span className="text-sm text-gray-300">سیستم فعال</span>
+            </div>
+          </div>
         </aside>
 
         {/* Main content */}
-        <main className="flex-1 p-6">
+        <main className="flex-1 p-6 rtl-dir">
           {children}
         </main>
       </div>
