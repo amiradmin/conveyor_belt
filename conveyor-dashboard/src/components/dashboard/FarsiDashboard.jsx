@@ -6,7 +6,6 @@ import LiveMonitoringSection from './components/LiveMonitoringSection';
 import AlertsSidebar from './components/AlertsSidebar';
 import { useSystemStatus } from './hooks/useSystemStatus';
 import { useVideoProcessing } from './hooks/useVideoProcessing';
-import { useWebSocket } from './hooks/useWebSocket';
 
 const FarsiDashboard = () => {
   const { systemStatus, loading, fetchSystemStatus } = useSystemStatus();
@@ -18,11 +17,11 @@ const FarsiDashboard = () => {
     objectCount,
     beltSpeed,
     error,
+    wsConnected,
     processVideo,
-    testBackendConnection
+    testBackendConnection,
+    reconnectWebSocket // Add this from useVideoProcessing
   } = useVideoProcessing();
-
-  const { wsConnected } = useWebSocket(videoData, objectCount, beltSpeed);
 
   if (loading) {
     return (
@@ -52,8 +51,10 @@ const FarsiDashboard = () => {
         objectCount={objectCount}
         beltSpeed={beltSpeed}
         error={error}
+        wsConnected={wsConnected}
         onProcessVideo={processVideo}
         onTestConnection={testBackendConnection}
+        onReconnect={reconnectWebSocket} // Add this prop
       />
 
       <StatisticsGrid systemStatus={systemStatus} />

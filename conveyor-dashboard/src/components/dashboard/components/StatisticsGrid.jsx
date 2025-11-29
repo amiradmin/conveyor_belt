@@ -23,7 +23,7 @@ const StatisticsGrid = ({ systemStatus }) => {
     },
     {
       title: 'زمان فعالیت',
-      value: `${toPersianNumber(systemStatus?.uptime_percentage?.toString() || '0')}٪`,
+      value: `${toPersianNumber(Math.floor(systemStatus?.uptime_percentage || 0).toString())}٪`, // Convert to integer
       change: '+۰.۳٪',
       changeType: 'positive',
       icon: '⏱️',
@@ -32,7 +32,7 @@ const StatisticsGrid = ({ systemStatus }) => {
     },
     {
       title: 'میانگین بازدهی',
-      value: `${toPersianNumber(systemStatus?.average_efficiency?.toString() || '0')}٪`,
+      value: `${toPersianNumber(Math.floor(systemStatus?.average_efficiency || 0).toString())}٪`, // Convert to integer
       change: '+۱.۲٪',
       changeType: 'positive',
       icon: '📊',
