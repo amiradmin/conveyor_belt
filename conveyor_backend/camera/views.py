@@ -10,6 +10,7 @@ import random
 from ultralytics import YOLO
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
+from .services.video_processor import video_processor
 from collections import deque
 import math
 import json
@@ -25,6 +26,111 @@ except Exception as e:
     logger.warning(f"Could not load YOLO model: {e}")
     model = None
 
+from .services.video_processor import video_processor
+import os
+
+
+class ProcessVideoFile(APIView):
+    def post(self, request):
+        """
+        Start video processing asynchronously
+        """
+        video_path = request.data.get("video_path")
+        if not video_path or not os.path.exists(video_path):
+            return Response({"error": "Video file not found"}, status=400)
+
+        # Start async processing
+        result = video_processor.process_video_async(
+            video_path,
+            callback=self._processing_complete_callback
+        )
+
+        return Response(result)
+
+    def _processing_complete_callback(self, result):
+        """Callback when video processing is complete"""
+        # You can store results in database or send final WebSocket message here
+        logger.info(f"Video processing completed: {result}")
+
+    def get(self, request):
+        """Get current processing status"""
+        status = video_processor.get_status()
+        return Response(status)
+
+    def delete(self, request):
+        """Stop current processing"""
+        video_processor.stop_processing()
+        return Response({"status": "stopped"})
+
+
+class RealTimeAnalysisAPI(APIView):
+    """Lightweight API for real-time frame analysis without blocking"""
+
+    def post(self, request):
+        try:
+            camera_id = request.data.get("camera_id", "default")
+            file = request.FILES.get("frame")
+
+            if not file:
+                return Response({"error": "No frame received"}, status=400)
+
+            # Quick frame analysis (non-blocking)
+            analysis = self.quick_analyze_frame(file, camera_id)
+
+            # Send WebSocket update in background
+            self.send_websocket_update_async(analysis, camera_id)
+
+            return Response(analysis)
+
+        except Exception as e:
+            logger.error(f"Real-time analysis error: {str(e)}")
+            return Response({"error": "Analysis error"}, status=500)
+
+    def quick_analyze_frame(self, file, camera_id):
+        """Quick analysis without heavy processing"""
+        # Simple contour detection for real-time
+        img_bytes = file.read()
+        img_array = np.frombuffer(img_bytes, np.uint8)
+        frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+
+        if frame is None:
+            return {"error": "Invalid image"}
+
+        # Quick object count
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        blur = cv2.GaussianBlur(gray, (5, 5), 0)
+        edges = cv2.Canny(blur, 50, 150)
+        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        object_count = len([cnt for cnt in contours if cv2.contourArea(cnt) > 100])
+
+        return {
+            "camera_id": camera_id,
+            "object_count": object_count,
+            "timestamp": timezone.now().isoformat(),
+            "processing_time": "realtime"
+        }
+
+    def send_websocket_update_async(self, analysis, camera_id):
+        """Send WebSocket update in background thread"""
+
+        def send_update():
+            try:
+                channel_layer = get_channel_layer()
+                async_to_sync(channel_layer.group_send)(
+                    f"conveyor_{camera_id}",
+                    {
+                        "type": "realtime_update",
+                        "data": analysis
+                    }
+                )
+            except Exception as e:
+                logger.error(f"Async WebSocket error: {str(e)}")
+
+        # Start in background thread
+        thread = threading.Thread(target=send_update)
+        thread.daemon = True
+        thread.start()
 
 class ConveyorAnalysisAPI(APIView):
     def __init__(self):
@@ -516,119 +622,119 @@ class StreamFrameAPIView(APIView):
 
         return response
 
-
-class ProcessVideoFile(APIView):
-    def post(self, request):
-        """
-        Process video + send frame number, object count, and realistic belt speed (km/h) via WebSocket
-        """
-        video_path = request.data.get("video_path")
-        if not video_path or not os.path.exists(video_path):
-            return Response({"error": "Video file not found"}, status=400)
-
-        cap = cv2.VideoCapture(video_path)
-        processed_frames = []
-        frame_count = 0
-        processed_count = 0
-        zoom_factor = 3
-        large_stone_area = 1000
-
-        # Calibration: pixels per meter (adjust according to your video)
-        PIXELS_PER_METER = 200  # example: 200 pixels = 1 meter on belt
-
-        VIDEO_FPS = cap.get(cv2.CAP_PROP_FPS) or 30
-        SKIP_FRAMES = 5  # only process every 5th frame
-
-        # Store previous x-coordinates to smooth speed
-        prev_x_queue = deque(maxlen=5)
-
-        # WebSocket channel layer
-        channel_layer = get_channel_layer()
-
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-
-            frame_count += 1
-
-            # Only process every SKIP_FRAMES frame
-            if processed_count % SKIP_FRAMES != 0:
-                processed_count += 1
-                continue
-
-            # Zoom image
-            frame = cv2.resize(frame, (frame.shape[1] * zoom_factor,
-                                       frame.shape[0] * zoom_factor))
-
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            blur = cv2.GaussianBlur(gray, (5, 5), 0)
-
-            # Conveyor belt mask
-            mask = np.zeros_like(blur)
-            h, w = blur.shape
-            cv2.rectangle(mask, (50, int(h * 0.3)), (w - 50, int(h * 0.7)), 255, -1)
-            masked = cv2.bitwise_and(blur, blur, mask=mask)
-
-            # Threshold + Canny
-            _, thresh = cv2.threshold(masked, 50, 255, cv2.THRESH_BINARY)
-            edges = cv2.Canny(thresh, 50, 150)
-
-            # Contours
-            contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            frame_copy = frame.copy()
-
-            # Count objects
-            object_count = 0
-            for cnt in contours:
-                area = cv2.contourArea(cnt)
-                color = (0, 0, 255) if area >= large_stone_area else (0, 255, 0)
-                cv2.drawContours(frame_copy, [cnt], -1, color, 2)
-                if area >= 100:
-                    object_count += 1
-
-            # Estimate belt speed (smoothed)
-            belt_speed_kmh = 0
-            if contours:
-                largest = max(contours, key=cv2.contourArea)
-                x, y, w_box, h_box = cv2.boundingRect(largest)
-                prev_x_queue.append(x)
-
-                if len(prev_x_queue) >= 2:
-                    # displacement in pixels over last N frames
-                    displacement_pixels = abs(prev_x_queue[-1] - prev_x_queue[0])
-                    # time between first and last frame in seconds
-                    time_sec = (len(prev_x_queue) * SKIP_FRAMES) / VIDEO_FPS
-                    belt_speed_m_per_s = (displacement_pixels / PIXELS_PER_METER) / time_sec
-                    belt_speed_kmh = belt_speed_m_per_s * 3.6
-
-            # Resize for sending
-            small = cv2.resize(frame_copy, (320, 240))
-            _, buffer = cv2.imencode(".jpg", small)
-            img_base64 = base64.b64encode(buffer).decode("utf-8")
-            processed_frames.append(img_base64)
-
-            # 🔴 Send progress + metrics to WebSocket
-            async_to_sync(channel_layer.group_send)(
-                "frame_progress",
-                {
-                    "type": "progress_message",
-                    "frame": processed_count,
-                    "object_count": object_count,
-                    "belt_speed": round(belt_speed_kmh, 2),
-                }
-            )
-
-            processed_count += 1
-
-        cap.release()
-
-        return Response({
-            "original_video_url": f"http://localhost:8000/media/{os.path.basename(video_path)}",
-            "total_frames": frame_count,
-            "processed_frames_count": processed_count,
-            "frames": processed_frames,
-        })
+#
+# class ProcessVideoFile(APIView):
+#     def post(self, request):
+#         """
+#         Process video + send frame number, object count, and realistic belt speed (km/h) via WebSocket
+#         """
+#         video_path = request.data.get("video_path")
+#         if not video_path or not os.path.exists(video_path):
+#             return Response({"error": "Video file not found"}, status=400)
+#
+#         cap = cv2.VideoCapture(video_path)
+#         processed_frames = []
+#         frame_count = 0
+#         processed_count = 0
+#         zoom_factor = 3
+#         large_stone_area = 1000
+#
+#         # Calibration: pixels per meter (adjust according to your video)
+#         PIXELS_PER_METER = 200  # example: 200 pixels = 1 meter on belt
+#
+#         VIDEO_FPS = cap.get(cv2.CAP_PROP_FPS) or 30
+#         SKIP_FRAMES = 5  # only process every 5th frame
+#
+#         # Store previous x-coordinates to smooth speed
+#         prev_x_queue = deque(maxlen=5)
+#
+#         # WebSocket channel layer
+#         channel_layer = get_channel_layer()
+#
+#         while True:
+#             ret, frame = cap.read()
+#             if not ret:
+#                 break
+#
+#             frame_count += 1
+#
+#             # Only process every SKIP_FRAMES frame
+#             if processed_count % SKIP_FRAMES != 0:
+#                 processed_count += 1
+#                 continue
+#
+#             # Zoom image
+#             frame = cv2.resize(frame, (frame.shape[1] * zoom_factor,
+#                                        frame.shape[0] * zoom_factor))
+#
+#             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+#             blur = cv2.GaussianBlur(gray, (5, 5), 0)
+#
+#             # Conveyor belt mask
+#             mask = np.zeros_like(blur)
+#             h, w = blur.shape
+#             cv2.rectangle(mask, (50, int(h * 0.3)), (w - 50, int(h * 0.7)), 255, -1)
+#             masked = cv2.bitwise_and(blur, blur, mask=mask)
+#
+#             # Threshold + Canny
+#             _, thresh = cv2.threshold(masked, 50, 255, cv2.THRESH_BINARY)
+#             edges = cv2.Canny(thresh, 50, 150)
+#
+#             # Contours
+#             contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+#             frame_copy = frame.copy()
+#
+#             # Count objects
+#             object_count = 0
+#             for cnt in contours:
+#                 area = cv2.contourArea(cnt)
+#                 color = (0, 0, 255) if area >= large_stone_area else (0, 255, 0)
+#                 cv2.drawContours(frame_copy, [cnt], -1, color, 2)
+#                 if area >= 100:
+#                     object_count += 1
+#
+#             # Estimate belt speed (smoothed)
+#             belt_speed_kmh = 0
+#             if contours:
+#                 largest = max(contours, key=cv2.contourArea)
+#                 x, y, w_box, h_box = cv2.boundingRect(largest)
+#                 prev_x_queue.append(x)
+#
+#                 if len(prev_x_queue) >= 2:
+#                     # displacement in pixels over last N frames
+#                     displacement_pixels = abs(prev_x_queue[-1] - prev_x_queue[0])
+#                     # time between first and last frame in seconds
+#                     time_sec = (len(prev_x_queue) * SKIP_FRAMES) / VIDEO_FPS
+#                     belt_speed_m_per_s = (displacement_pixels / PIXELS_PER_METER) / time_sec
+#                     belt_speed_kmh = belt_speed_m_per_s * 3.6
+#
+#             # Resize for sending
+#             small = cv2.resize(frame_copy, (320, 240))
+#             _, buffer = cv2.imencode(".jpg", small)
+#             img_base64 = base64.b64encode(buffer).decode("utf-8")
+#             processed_frames.append(img_base64)
+#
+#             # 🔴 Send progress + metrics to WebSocket
+#             async_to_sync(channel_layer.group_send)(
+#                 "frame_progress",
+#                 {
+#                     "type": "progress_message",
+#                     "frame": processed_count,
+#                     "object_count": object_count,
+#                     "belt_speed": round(belt_speed_kmh, 2),
+#                 }
+#             )
+#
+#             processed_count += 1
+#
+#         cap.release()
+#
+#         return Response({
+#             "original_video_url": f"http://localhost:8000/media/{os.path.basename(video_path)}",
+#             "total_frames": frame_count,
+#             "processed_frames_count": processed_count,
+#             "frames": processed_frames,
+#         })
 
 
 class SystemStatusAPI(APIView):

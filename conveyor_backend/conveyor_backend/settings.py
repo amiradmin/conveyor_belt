@@ -78,6 +78,22 @@ TEMPLATES = [
 WSGI_APPLICATION = 'conveyor_backend.wsgi.application'
 
 
+# Disable browsable API in production or to avoid static file warnings
+if not DEBUG:
+    REST_FRAMEWORK = {
+        'DEFAULT_RENDERER_CLASSES': [
+            'rest_framework.renderers.JSONRenderer',
+        ]
+    }
+else:
+    REST_FRAMEWORK = {
+        'DEFAULT_RENDERER_CLASSES': [
+            'rest_framework.renderers.JSONRenderer',
+            'rest_framework.renderers.BrowsableAPIRenderer',
+        ]
+    }
+
+
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 

@@ -1,17 +1,10 @@
-# camera/urls.py - FIXED VERSION
 from django.urls import path
-from .views import (
-    ProcessVideoFile,
-    StreamFrameAPIView,
-    ConveyorAnalysisAPI,
-    SystemStatusAPI,
-    HistoricalDataAPI
-)
+from . import views
 
 urlpatterns = [
-    path("process-video/", ProcessVideoFile.as_view(), name="process-video"),
-    path('stream/', StreamFrameAPIView.as_view(), name='stream-frame'),
-    path('conveyor/analyze/', ConveyorAnalysisAPI.as_view(), name='conveyor-analyze'),
-    path('system/status/', SystemStatusAPI.as_view(), name='system-status'),
-    path('analytics/historical/', HistoricalDataAPI.as_view(), name='historical-data'),
+    path('process-video/', views.ProcessVideoFile.as_view(), name='process-video'),
+    path('analyze/', views.ConveyorAnalysisAPI.as_view(), name='analyze'),
+    path('stream/', views.StreamFrameAPIView.as_view(), name='stream'),
+    path('status/', views.SystemStatusAPI.as_view(), name='status'),
+    path('historical/', views.HistoricalDataAPI.as_view(), name='historical'),
 ]
