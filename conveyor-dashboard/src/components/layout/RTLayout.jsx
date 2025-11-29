@@ -13,6 +13,7 @@ const RTLayout = ({ children }) => {
     { name: 'نقشه نوارها', path: '/map', icon: '🗺️' },
     { name: 'گزارشات', path: '/reports', icon: '📋' },
     { name: 'تنظیمات', path: '/settings', icon: '⚙️' },
+    { name: 'مدیریت دوربین‌ها', path: '/cameras', icon: '📷' }
   ];
 
   return (

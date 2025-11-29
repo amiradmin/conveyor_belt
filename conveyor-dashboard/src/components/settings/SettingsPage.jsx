@@ -57,7 +57,7 @@ const SettingsPage = () => {
                     </label>
                     <input
                       type="text"
-                      defaultValue="فولاد شهبان شادگان"
+                      defaultValue="فولاد شادگان"
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
                   </div>
@@ -79,7 +79,7 @@ const SettingsPage = () => {
                   </label>
                   <textarea
                     rows={3}
-                    defaultValue="سیستم نظارت هوشمند نوار نقاله های کارخانه فولاد شهبان شادگان"
+                    defaultValue="سیستم نظارت هوشمند نوار نقاله های کارخانه فولاد  شادگان"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>

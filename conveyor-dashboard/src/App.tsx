@@ -9,6 +9,8 @@ import AnalyticsPage from './components/analytics/AnalyticsPage';
 import BeltMap from './components/map/BeltMap';
 import ReportsPage from './components/reports/ReportsPage';
 import SettingsPage from './components/settings/SettingsPage';
+import CameraManagement from './components/cameras/CameraManagement';
+
 
 function App() {
   return (
@@ -22,6 +24,7 @@ function App() {
           <Route path="/map" element={<BeltMap />} />
           <Route path="/reports" element={<ReportsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/cameras" element={<CameraManagement />} />
         </Routes>
       </RTLayout>
     </Router>
