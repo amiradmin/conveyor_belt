@@ -59,6 +59,7 @@ class BeltCamerasAPI(APIView):
                     camera_data = {
                         'id': belt.camera.id,
                         'name': belt.camera.name,
+                        'url': belt.camera.url,
                         'location': belt.camera.location,
                         'status': belt.camera.status,
                         'status_display': belt.camera.get_status_display(),

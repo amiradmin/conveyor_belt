@@ -11,6 +11,7 @@ class Camera(models.Model):
     ]
 
     name = models.CharField(max_length=200, verbose_name="نام دوربین")
+    url = models.CharField(max_length=200,null=True, blank=True)
     location = models.CharField(max_length=200, verbose_name="موقعیت")
     status = models.CharField(max_length=20, choices=CAMERA_STATUS, default='active')
     ip_address = models.GenericIPAddressField(verbose_name="آدرس IP",null=True, blank=True)
@@ -37,7 +38,7 @@ class ConveyorBelt(models.Model):
     camera = models.ForeignKey(
         Camera,
         on_delete=models.CASCADE,
-        null=True, blank=True, 
+        null=True, blank=True,
         verbose_name="دوربین"
     )
     status = models.CharField(max_length=20, choices=BELT_STATUS, default='operational')
