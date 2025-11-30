@@ -39,6 +39,71 @@ except Exception as e:
 
 
 # ===== CRUD VIEWSETS =====
+class BeltCamerasAPI(APIView):
+    """
+    API endpoint that returns all conveyor belts with their associated cameras
+    Handles belts without cameras assigned
+    """
+
+    def get(self, request):
+        try:
+            # Get all conveyor belts, including those without cameras
+            conveyor_belts = ConveyorBelt.objects.select_related('camera').all()
+
+            # Structure the response data
+            belts_data = []
+
+            for belt in conveyor_belts:
+                # Check if belt has a camera assigned
+                if belt.camera:
+                    camera_data = {
+                        'id': belt.camera.id,
+                        'name': belt.camera.name,
+                        'location': belt.camera.location,
+                        'status': belt.camera.status,
+                        'status_display': belt.camera.get_status_display(),
+                        'ip_address': belt.camera.ip_address,
+                        'last_active': belt.camera.last_active,
+                        'efficiency': belt.camera.efficiency
+                    }
+                else:
+                    # No camera assigned
+                    camera_data = None
+
+                belt_data = {
+                    'id': belt.id,
+                    'name': belt.name,
+                    'status': belt.status,
+                    'status_display': belt.get_status_display(),
+                    'current_speed': belt.current_speed,
+                    'average_efficiency': belt.average_efficiency,
+                    'last_maintenance': belt.last_maintenance,
+                    'video_url': belt.video_url,
+                    'camera': camera_data,  # This can be None
+                    'has_camera': belt.camera is not None  # Explicit flag for frontend
+                }
+                belts_data.append(belt_data)
+
+            # Add statistics about belts with/without cameras
+            belts_with_cameras = [belt for belt in conveyor_belts if belt.camera]
+            belts_without_cameras = [belt for belt in conveyor_belts if not belt.camera]
+
+            return Response({
+                'count': len(belts_data),
+                'statistics': {
+                    'total_belts': len(belts_data),
+                    'belts_with_cameras': len(belts_with_cameras),
+                    'belts_without_cameras': len(belts_without_cameras),
+                    'camera_coverage': f"{(len(belts_with_cameras) / len(belts_data) * 100):.1f}%" if belts_data else "0%"
+                },
+                'belts': belts_data
+            })
+
+        except Exception as e:
+            return Response(
+                {'error': f'خطا در دریافت اطلاعات: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class CameraViewSet(viewsets.ModelViewSet):
     queryset = Camera.objects.all()

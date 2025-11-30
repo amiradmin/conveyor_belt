@@ -13,7 +13,8 @@ class Camera(models.Model):
     name = models.CharField(max_length=200, verbose_name="نام دوربین")
     location = models.CharField(max_length=200, verbose_name="موقعیت")
     status = models.CharField(max_length=20, choices=CAMERA_STATUS, default='active')
-    ip_address = models.GenericIPAddressField(verbose_name="آدرس IP")
+    ip_address = models.GenericIPAddressField(verbose_name="آدرس IP",null=True, blank=True)
+    port = models.IntegerField(null=True, blank=True)
     last_active = models.DateTimeField(null=True, blank=True)
     efficiency = models.FloatField(default=0.0, verbose_name="بازدهی")
 
@@ -33,7 +34,12 @@ class ConveyorBelt(models.Model):
     ]
 
     name = models.CharField(max_length=200, verbose_name="نام نوار نقاله")
-    camera = models.ForeignKey(Camera, on_delete=models.CASCADE, verbose_name="دوربین")
+    camera = models.ForeignKey(
+        Camera,
+        on_delete=models.CASCADE,
+        null=True, blank=True, 
+        verbose_name="دوربین"
+    )
     status = models.CharField(max_length=20, choices=BELT_STATUS, default='operational')
     current_speed = models.FloatField(default=0.0, verbose_name="سرعت فعلی")
     average_efficiency = models.FloatField(default=0.0, verbose_name="میانگین بازدهی")

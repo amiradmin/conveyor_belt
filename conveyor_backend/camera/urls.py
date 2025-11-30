@@ -24,4 +24,7 @@ urlpatterns = [
     path('dashboard/stats/', views.DashboardStatsAPI.as_view(), name='dashboard-stats'),
     path('cameras/<int:camera_id>/belts/', views.CameraBeltsAPI.as_view(), name='camera-belts'),
     path('alerts/unresolved/', views.UnresolvedAlertsAPI.as_view(), name='unresolved-alerts'),
+
+    # New endpoints for belts and cameras
+    path('belts-cameras/', views.BeltCamerasAPI.as_view(), name='belts-cameras'),
 ]

@@ -62,7 +62,7 @@ export const useVideoProcessing = () => {
         objects: Math.floor(Math.random() * 10) + 1,
         speed: (Math.random() * 3 + 1).toFixed(2),
         type: frameId % 3 === 0 ? 'large' : frameId % 2 === 0 ? 'medium' : 'small',
-        image_url: `http://localhost:8000/media/frame_${frameId}.jpg` // Example frame URL
+        image_url: `http://localhost:8000/media/frame_${frameId}.jpg`
       };
 
       setProcessedFrames(prev => {
@@ -130,9 +130,8 @@ export const useVideoProcessing = () => {
 
           try {
             const data = JSON.parse(event.data);
-            console.log("📨 WebSocket message:", data);
+            console.log("📨 WebSocket message received:", data);
 
-            // Handle different message types from your Django backend
             if (data.type === 'progress') {
               setVideoProgress(data.progress || 0);
               setObjectCount(data.object_count || 0);
@@ -144,7 +143,6 @@ export const useVideoProcessing = () => {
                 fetchFinalResults();
               }
             } else if (data.type === 'realtime_update') {
-              // Handle real-time analysis updates
               const analysis = data.data;
               if (analysis.object_count !== undefined) {
                 setObjectCount(analysis.object_count);
@@ -153,7 +151,6 @@ export const useVideoProcessing = () => {
                 setBeltSpeed(analysis.belt_speed);
               }
 
-              // Add to processed frames for playback
               if (analysis.object_count > 0) {
                 const newFrame = {
                   id: Date.now(),
@@ -166,7 +163,7 @@ export const useVideoProcessing = () => {
 
                 setProcessedFrames(prev => {
                   const updated = [...prev, newFrame];
-                  return updated.slice(-20); // Keep last 20 frames
+                  return updated.slice(-20);
                 });
               }
             } else if (data.type === 'processing_complete') {
@@ -175,7 +172,6 @@ export const useVideoProcessing = () => {
               stopFrameProcessing();
               fetchFinalResults();
             } else if (data.type === 'alert') {
-              // Handle new alerts
               setAlerts(prev => [data.data, ...prev.slice(0, 9)]);
             }
           } catch (error) {
@@ -189,7 +185,7 @@ export const useVideoProcessing = () => {
           setWsConnected(false);
 
           if (event.code !== 1000 && isMountedRef.current) {
-            console.log("🔄 Reconnecting in 3 seconds...");
+            console.log("🔄 Attempting to reconnect in 3 seconds...");
             reconnectTimeoutRef.current = setTimeout(() => {
               if (isMountedRef.current) connectWebSocket();
             }, 3000);
@@ -226,7 +222,7 @@ export const useVideoProcessing = () => {
     };
   }, [videoData?.original_video_url, beltSpeed, stopFrameProcessing, fetchFinalResults]);
 
-  // Enhanced processVideo function that calls your Django API
+  // FIXED: Enhanced processVideo function with proper error handling
   const processVideo = useCallback(async (videoPath = "/app/media/test3.mp4") => {
     try {
       setVideoLoading(true);
@@ -236,12 +232,14 @@ export const useVideoProcessing = () => {
       setBeltSpeed(0);
       setProcessedFrames([]);
 
+      console.log("🎬 Starting video processing...");
+
       // Call your Django ProcessVideoFile API
       const response = await apiClient.post("/camera/process-video/", {
         video_path: videoPath
       });
 
-      console.log("🎬 Video processing started:", response.data);
+      console.log("✅ Video processing started:", response.data);
 
       // Start local frame simulation while waiting for WebSocket updates
       startContinuousFrameProcessing();
@@ -250,14 +248,31 @@ export const useVideoProcessing = () => {
 
     } catch (error) {
       console.error("❌ Error starting video processing:", error);
+
+      // FIXED: Proper error handling without circular references
       let errorMessage = "خطا در شروع پردازش ویدیو";
 
-      if (error.code === 'NETWORK_ERROR' || error.code === 'ECONNREFUSED') {
-        errorMessage = "سرور در دسترس نیست. لطفا مطمئن شوید سرور Django اجرا است";
-      } else if (error.response) {
-        errorMessage = `خطای سرور: ${error.response.status} - ${error.response.data?.error || 'Unknown error'}`;
-      } else if (error.message?.includes('timeout')) {
-        errorMessage = "زمان درخواست به پایان رسید";
+      if (axios.isAxiosError(error)) {
+        // Handle Axios errors
+        if (error.code === 'NETWORK_ERROR' || error.code === 'ECONNREFUSED') {
+          errorMessage = "سرور در دسترس نیست. لطفا مطمئن شوید سرور Django اجرا است";
+        } else if (error.response) {
+          // Server responded with error status
+          errorMessage = `خطای سرور: ${error.response.status} - ${error.response.data?.error || 'خطای ناشناخته'}`;
+        } else if (error.request) {
+          // Request was made but no response received
+          errorMessage = "پاسخی از سرور دریافت نشد. لطفا اتصال شبکه را بررسی کنید";
+        } else if (error.message?.includes('timeout')) {
+          errorMessage = "زمان درخواست به پایان رسید";
+        } else {
+          errorMessage = `خطای شبکه: ${error.message}`;
+        }
+      } else if (error instanceof Error) {
+        // Handle generic JavaScript errors
+        errorMessage = `خطا: ${error.message}`;
+      } else {
+        // Handle unknown error types
+        errorMessage = "خطای ناشناخته در پردازش ویدیو";
       }
 
       setError(errorMessage);
@@ -271,7 +286,7 @@ export const useVideoProcessing = () => {
     try {
       setError("در حال آزمایش اتصال به سرور...");
 
-      // Test available endpoints - only test endpoints that exist
+      // Test available endpoints
       const endpointsToTest = [
         '/camera/status/',
         '/camera/process-video/'
@@ -279,7 +294,7 @@ export const useVideoProcessing = () => {
 
       const testResults = await Promise.allSettled(
         endpointsToTest.map(endpoint =>
-          apiClient.get(endpoint).catch(error => ({ error }))
+          apiClient.get(endpoint).catch(error => ({ error: true, message: error.message }))
         )
       );
 
