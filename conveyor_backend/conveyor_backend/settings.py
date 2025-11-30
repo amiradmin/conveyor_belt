@@ -27,7 +27,8 @@ SECRET_KEY = 'django-insecure-1#wtzt%u#78v!kkk==ppe*j05c2&rbs(qh4dlc+i#kjqt0^6%a
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0']
+
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'backend', 'your-domain.com']
 
 
 # Application definition
@@ -165,6 +166,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://localhost:5174",
     "http://172.18.0.4:5173",
+    "http://frontend:3000",
+
 ]
 
 ASGI_APPLICATION = "conveyor_backend.asgi.application"
