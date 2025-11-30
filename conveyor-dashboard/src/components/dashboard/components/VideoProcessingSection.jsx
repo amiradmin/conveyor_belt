@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { toPersianNumber } from '../utils/persianUtils';
 
 const VideoProcessingSection = ({
@@ -15,22 +15,20 @@ const VideoProcessingSection = ({
   onReconnect
 }) => {
   const videoRef = useRef(null);
+  const liveFrameRef = useRef(null);
+  const [currentFrameIndex, setCurrentFrameIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
 
   // Auto-play the video when it loads
   useEffect(() => {
     if (videoRef.current && videoData?.original_video_url) {
       const playVideo = async () => {
         try {
-          // Set video to muted to allow autoplay (browser restrictions)
           videoRef.current.muted = true;
           await videoRef.current.play();
-
-          // If autoplay with sound is allowed, unmute and try to play with sound
           videoRef.current.muted = false;
           await videoRef.current.play();
         } catch (error) {
-          // If autoplay with sound fails, keep it muted and try again
-          console.log("Autoplay with sound blocked, trying muted:", error);
           try {
             videoRef.current.muted = true;
             await videoRef.current.play();
@@ -40,8 +38,7 @@ const VideoProcessingSection = ({
         }
       };
 
-      // Wait for video to be ready
-      if (videoRef.current.readyState >= 3) { // HAVE_FUTURE_DATA
+      if (videoRef.current.readyState >= 3) {
         playVideo();
       } else {
         videoRef.current.addEventListener('loadeddata', playVideo);
@@ -51,6 +48,55 @@ const VideoProcessingSection = ({
       }
     }
   }, [videoData?.original_video_url]);
+
+  // Simulate live video playback of processed frames
+  useEffect(() => {
+    let frameInterval;
+
+    if (isPlaying && processedFrames.length > 0) {
+      frameInterval = setInterval(() => {
+        setCurrentFrameIndex(prev => {
+          const nextIndex = (prev + 1) % processedFrames.length;
+          return nextIndex;
+        });
+      }, 100); // 10 FPS for smooth video-like playback
+    }
+
+    return () => {
+      if (frameInterval) clearInterval(frameInterval);
+    };
+  }, [isPlaying, processedFrames.length]);
+
+  // Start playing automatically when we have enough frames
+  useEffect(() => {
+    if (processedFrames.length >= 3 && !isPlaying) {
+      setIsPlaying(true);
+    }
+  }, [processedFrames.length, isPlaying]);
+
+  const togglePlayback = () => {
+    setIsPlaying(!isPlaying);
+  };
+
+  const getFrameColor = (frameType) => {
+    switch (frameType) {
+      case 'large': return 'from-red-400 to-red-600';
+      case 'medium': return 'from-yellow-400 to-yellow-600';
+      case 'small': return 'from-green-400 to-green-600';
+      default: return 'from-blue-400 to-blue-600';
+    }
+  };
+
+  const getFrameIntensity = (index) => {
+    const currentFrame = processedFrames[currentFrameIndex];
+    if (!currentFrame) return 'opacity-100';
+
+    const distance = Math.abs(index - currentFrameIndex);
+    if (distance === 0) return 'opacity-100 scale-105';
+    if (distance === 1) return 'opacity-80 scale-102';
+    if (distance === 2) return 'opacity-60';
+    return 'opacity-40';
+  };
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -219,96 +265,153 @@ const VideoProcessingSection = ({
               </div>
             </div>
 
-            {/* Processed Results Section */}
+            {/* Processed Results Section - Live Video Style */}
             <div className="space-y-4">
-              <h3 className="font-bold text-gray-900">نتایج پردازش شده</h3>
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-gray-900">ویدیو پردازش شده</h3>
+                <div className="flex items-center space-x-2 space-x-reverse">
+                  {processedFrames.length > 0 && (
+                    <button
+                      onClick={togglePlayback}
+                      className={`px-3 py-1 rounded-lg text-sm flex items-center space-x-1 space-x-reverse ${
+                        isPlaying
+                          ? 'bg-red-600 text-white hover:bg-red-700'
+                          : 'bg-green-600 text-white hover:bg-green-700'
+                      } transition-colors`}
+                    >
+                      {isPlaying ? (
+                        <>
+                          <span>⏸️</span>
+                          <span>توقف</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>▶️</span>
+                          <span>پخش</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
+              </div>
 
               {processedFrames.length > 0 ? (
                 <div className="space-y-4">
-                  {/* Main processed frame display */}
-                  <div className="bg-gray-100 rounded-lg p-4 border-2 border-green-200">
-                    <div className="aspect-video bg-gradient-to-br from-blue-500 to-green-500 rounded-lg overflow-hidden flex items-center justify-center relative">
-                      <div className="text-white text-center">
-                        <div className="text-4xl mb-2">🎯</div>
-                        <p className="text-lg font-semibold">فریم پردازش شده نمونه</p>
-                        <p className="text-sm text-gray-200 mt-1">
-                          شناسایی اشیاء و تحلیل سرعت
-                        </p>
-                        <div className="mt-3 flex justify-center space-x-4 space-x-reverse text-xs">
-                          <div className="bg-white/20 px-2 py-1 rounded">
-                            🟢 {toPersianNumber(objectCount)} شیء
-                          </div>
-                          <div className="bg-white/20 px-2 py-1 rounded">
-                            ⚡ {toPersianNumber(beltSpeed)} m/s
+                  {/* Live Video Display */}
+                  <div className="bg-gray-900 rounded-lg overflow-hidden border-2 border-green-400">
+                    <div
+                      ref={liveFrameRef}
+                      className="aspect-video flex items-center justify-center relative"
+                    >
+                      {processedFrames[currentFrameIndex] ? (
+                        <div className={`w-full h-full bg-gradient-to-br ${getFrameColor(processedFrames[currentFrameIndex].type)} flex items-center justify-center transition-all duration-100`}>
+                          <div className="text-white text-center">
+                            <div className="text-6xl mb-4">📹</div>
+                            <p className="text-xl font-bold">فریم {toPersianNumber(processedFrames[currentFrameIndex].id || currentFrameIndex + 1)}</p>
+                            <p className="text-lg mt-2">در حال پخش زنده</p>
+                            <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
+                              <div className="bg-white/20 px-3 py-2 rounded">
+                                🟢 {toPersianNumber(processedFrames[currentFrameIndex].objects || objectCount)} شیء
+                              </div>
+                              <div className="bg-white/20 px-3 py-2 rounded">
+                                ⚡ {toPersianNumber(processedFrames[currentFrameIndex].speed || beltSpeed)} m/s
+                              </div>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      {/* Live processing indicator */}
-                      {videoLoading && (
-                        <div className="absolute top-3 right-3">
-                          <div className="flex items-center space-x-1 space-x-reverse bg-green-600 text-white px-2 py-1 rounded-full text-xs">
-                            <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-                            <span>در حال پردازش</span>
-                          </div>
+                      ) : (
+                        <div className="text-white text-center">
+                          <div className="text-4xl mb-2">⏳</div>
+                          <p>در حال بارگذاری فریم‌ها...</p>
                         </div>
                       )}
+
+                      {/* Live indicator */}
+                      <div className="absolute top-3 right-3">
+                        <div className="flex items-center space-x-1 space-x-reverse bg-red-600 text-white px-2 py-1 rounded-full text-xs">
+                          <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                          <span>LIVE</span>
+                        </div>
+                      </div>
+
+                      {/* Frame counter */}
+                      <div className="absolute top-3 left-3 bg-black/50 text-white px-2 py-1 rounded text-sm">
+                        فریم {toPersianNumber(currentFrameIndex + 1)} از {toPersianNumber(processedFrames.length)}
+                      </div>
+
+                      {/* Playback status */}
+                      <div className="absolute bottom-3 left-3 bg-black/50 text-white px-2 py-1 rounded text-sm">
+                        {isPlaying ? '▶️ در حال پخش' : '⏸️ متوقف شده'}
+                      </div>
                     </div>
                   </div>
 
-                  {/* Additional frames grid */}
-                  <div>
-                    <h4 className="text-sm font-medium text-gray-700 mb-2">
-                      فریم‌های پردازش شده ({toPersianNumber(processedFrames.length)})
+                  {/* Frame Timeline */}
+                  <div className="bg-gray-100 rounded-lg p-4 border border-gray-300">
+                    <h4 className="text-sm font-medium text-gray-700 mb-3 text-center">
+                      خط زمانی فریم‌ها ({toPersianNumber(processedFrames.length)} فریم)
                     </h4>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="flex space-x-1 space-x-reverse overflow-x-auto pb-2">
                       {processedFrames.map((frame, index) => (
                         <div
-                          key={index}
-                          className="aspect-video bg-gradient-to-br from-blue-100 to-green-100 rounded-lg border-2 border-blue-300 flex flex-col items-center justify-center relative p-2"
+                          key={frame.id || index}
+                          className={`flex-shrink-0 w-16 h-16 rounded-lg border-2 transition-all duration-200 cursor-pointer ${
+                            index === currentFrameIndex
+                              ? 'border-green-500 scale-110 shadow-lg'
+                              : 'border-gray-300'
+                          } ${getFrameColor(frame.type)} ${getFrameIntensity(index)}`}
+                          onClick={() => {
+                            setCurrentFrameIndex(index);
+                            setIsPlaying(false);
+                          }}
                         >
-                          <div className="text-blue-700 text-lg font-bold mb-1">
-                            {toPersianNumber(index + 1)}
-                          </div>
-                          <div className="text-blue-600 text-xs text-center">
-                            فریم {toPersianNumber(index + 1)}
-                          </div>
-                          {/* Processing indicator for frames during loading */}
-                          {videoLoading && index === processedFrames.length - 1 && (
-                            <div className="absolute top-1 right-1">
-                              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                          <div className="w-full h-full flex flex-col items-center justify-center text-white text-xs">
+                            <div className="font-bold">{toPersianNumber(frame.id || index + 1)}</div>
+                            <div className="text-[10px] mt-1">
+                              {frame.objects || 1} 🟢
                             </div>
-                          )}
-                          {/* Checkmark for completed frames */}
-                          {!videoLoading && (
-                            <div className="absolute top-1 right-1">
-                              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                            </div>
-                          )}
+                          </div>
                         </div>
                       ))}
                     </div>
-                    {videoLoading && (
-                      <div className="mt-2 text-center">
-                        <div className="inline-flex items-center space-x-1 space-x-reverse bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs">
-                          <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
-                          <span>در حال پردازش فریم‌های بیشتر...</span>
-                        </div>
-                      </div>
-                    )}
+
+                    {/* Playback controls */}
+                    <div className="flex justify-center space-x-3 space-x-reverse mt-3">
+                      <button
+                        onClick={() => {
+                          setCurrentFrameIndex(prev => Math.max(0, prev - 1));
+                          setIsPlaying(false);
+                        }}
+                        disabled={currentFrameIndex === 0}
+                        className="px-3 py-1 bg-gray-600 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        ⏪ قبلی
+                      </button>
+                      <button
+                        onClick={() => {
+                          setCurrentFrameIndex(prev => Math.min(processedFrames.length - 1, prev + 1));
+                          setIsPlaying(false);
+                        }}
+                        disabled={currentFrameIndex === processedFrames.length - 1}
+                        className="px-3 py-1 bg-gray-600 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        بعدی ⏩
+                      </button>
+                    </div>
                   </div>
                 </div>
               ) : (
                 <div className="bg-gray-100 rounded-lg p-8 text-center border-2 border-dashed border-gray-300">
-                  <div className="text-4xl mb-2">📊</div>
-                  <p className="text-gray-600">هنوز پردازشی انجام نشده</p>
+                  <div className="text-4xl mb-2">📹</div>
+                  <p className="text-gray-600">هنوز فریمی پردازش نشده</p>
                   <p className="text-gray-500 text-sm mt-1">
-                    برای مشاهده نتایج پردازش، دکمه "شروع پردازش ویدیو" را کلیک کنید
+                    برای مشاهده ویدیوی پردازش شده، دکمه "شروع پردازش ویدیو" را کلیک کنید
                   </p>
                   {videoLoading && (
                     <div className="mt-4">
                       <div className="inline-flex items-center space-x-1 space-x-reverse bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs">
                         <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
-                        <span>در حال آماده‌سازی پردازش...</span>
+                        <span>در حال تولید فریم‌ها...</span>
                       </div>
                     </div>
                   )}
@@ -320,7 +423,6 @@ const VideoProcessingSection = ({
                 <button
                   onClick={() => {
                     if (processedFrames.length > 0) {
-                      // Show full report logic here
                       console.log("Showing full report for", processedFrames.length, "frames");
                     }
                   }}
@@ -337,7 +439,6 @@ const VideoProcessingSection = ({
                 <button
                   onClick={() => {
                     if (processedFrames.length > 0) {
-                      // Download results logic here
                       console.log("Downloading results for", processedFrames.length, "frames");
                     }
                   }}
