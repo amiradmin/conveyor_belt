@@ -63,6 +63,17 @@ const FarsiDashboard = () => {
         <LiveMonitoringSection
           systemStatus={systemStatus}
           onRefresh={fetchSystemStatus}
+                  videoData={videoData}
+        videoLoading={videoLoading}
+        videoProgress={videoProgress}
+        processedFrames={processedFrames}
+        objectCount={objectCount}
+        beltSpeed={beltSpeed}
+        error={error}
+        wsConnected={wsConnected}
+        onProcessVideo={processVideo}
+        onTestConnection={testBackendConnection}
+        onReconnect={reconnectWebSocket}
         />
         <AlertsSidebar systemStatus={systemStatus} />
       </div>

@@ -38,6 +38,8 @@ class ConveyorBelt(models.Model):
     current_speed = models.FloatField(default=0.0, verbose_name="سرعت فعلی")
     average_efficiency = models.FloatField(default=0.0, verbose_name="میانگین بازدهی")
     last_maintenance = models.DateField(null=True, blank=True, verbose_name="آخرین تعمیر")
+    video = models.FileField(upload_to='conveyor_videos/', null=True, blank=True, verbose_name="فیلم نوار نقاله")
+    video_url = models.URLField(max_length=500, null=True, blank=True, verbose_name="آدرس فیلم")
 
     class Meta:
         verbose_name = "نوار نقاله"
