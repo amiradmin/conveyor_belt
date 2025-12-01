@@ -1,29 +1,22 @@
 {
   "name": "steel-monitoring-fa",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "dependencies": {
-    "@emotion/react": "^11.14.0",
-    "@emotion/styled": "^11.14.1",
-    "@fontsource/vazirmatn": "^5.2.8",
-    "@mui/icons-material": "^6.5.0",
-    "@mui/material": "^6.5.0",
-    "@mui/x-charts": "^7.29.1",
-    "@mui/x-data-grid": "^7.29.12",
-    "@testing-library/dom": "^10.4.1",
-    "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/react": "^16.3.0",
-    "@testing-library/user-event": "^13.5.0",
-    "jalaali-js": "^1.2.8",
-    "moment-jalaali": "^0.10.4",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "react-player": "^3.4.0",
-    "react-router-dom": "^7.9.6",
+    "@emotion/react": "^11.11.1",
+    "@emotion/styled": "^11.11.0",
+    "@fontsource/vazirmatn": "^5.0.8",
+    "@mui/icons-material": "^6.1.0",
+    "@mui/material": "^6.1.0",
+    "@mui/x-charts": "^7.0.0",
+    "@mui/x-data-grid": "^7.0.0",
+    "axios": "^1.6.2",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-player": "^2.12.0",
+    "react-router-dom": "^6.20.0",
     "react-scripts": "5.0.1",
-    "rtl-css-js": "^1.16.1",
-    "socket.io-client": "^4.8.1",
-    "stylis": "^4.3.6",
+    "stylis": "^4.2.0",
     "stylis-plugin-rtl": "^2.1.1",
     "web-vitals": "^2.1.4"
   },
@@ -31,7 +24,13 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "eject": "react-scripts eject",
+    "docker:build": "docker build -t conveyor-frontend .",
+    "docker:run": "docker run -p 3000:80 conveyor-frontend",
+    "docker:dev": "docker-compose up frontend",
+    "docker:prod": "docker-compose -f docker-compose.prod.yml up",
+    "lint": "eslint src --ext .js,.jsx",
+    "format": "prettier --write \"src/**/*.{js,jsx,css,md}\""
   },
   "eslintConfig": {
     "extends": [
@@ -50,5 +49,14 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "proxy": "http://backend:8000",
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.1.4",
+    "@testing-library/react": "^14.0.0",
+    "@testing-library/user-event": "^14.5.1",
+    "eslint": "^8.55.0",
+    "eslint-plugin-react": "^7.33.2",
+    "prettier": "^3.1.0"
   }
 }

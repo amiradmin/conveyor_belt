@@ -11,9 +11,7 @@ import { faTheme } from './theme/faTheme';
 import MainLayout from './components/layout/MainLayout';
 import MainDashboard from './pages/MainDashboard';
 import BeltDetail from './pages/BeltDetail';
-import CameraDetail from './pages/CameraDetail';
-import AlertsPage from './pages/AlertsPage';
-import ReportsPage from './pages/ReportsPage';
+
 import { ConveyorProvider } from './contexts/ConveyorContext';
 import { SnackbarProvider } from './contexts/SnackbarContext';
 import './styles/faStyles.css';
@@ -43,9 +41,7 @@ function App() {
                   <Route path="/" element={<MainLayout />}>
                     <Route index element={<MainDashboard />} />
                     <Route path="belt/:id" element={<BeltDetail />} />
-                    <Route path="camera/:id" element={<CameraDetail />} />
-                    <Route path="alerts" element={<AlertsPage />} />
-                    <Route path="reports" element={<ReportsPage />} />
+
                   </Route>
                 </Routes>
               </div>

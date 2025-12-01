@@ -28,7 +28,7 @@ SECRET_KEY = 'django-insecure-1#wtzt%u#78v!kkk==ppe*j05c2&rbs(qh4dlc+i#kjqt0^6%a
 DEBUG = True
 
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'backend', 'your-domain.com']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'backend', 'dev.mite.co.ir']
 
 
 # Application definition
