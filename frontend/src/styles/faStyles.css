@@ -1,0 +1,353 @@
+/* استایل اصلی فارسی */
+:root {
+  --fa-bg: #0d1b2a;
+  --fa-panel: #1b263b;
+  --fa-border: #2a3b5a;
+  --fa-primary: #00bcd4;
+  --fa-success: #4caf50;
+  --fa-warning: #ff9800;
+  --fa-danger: #f44336;
+  --fa-text: #e0e0e0;
+  --fa-text-secondary: #90a4ae;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  direction: rtl;
+  background-color: var(--fa-bg);
+  color: var(--fa-text);
+  font-family: 'Vazirmatn', Tahoma, Arial, sans-serif;
+  overflow-x: hidden;
+  line-height: 1.6;
+}
+
+/* پنل‌های صنعتی */
+.scada-panel {
+  background: var(--fa-panel);
+  border: 1px solid var(--fa-border);
+  border-radius: 8px;
+  padding: 20px;
+  margin: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.scada-panel-title {
+  color: var(--fa-primary);
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--fa-border);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* شاخص وضعیت */
+.status-indicator {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  margin-left: 8px;
+}
+
+.status-running {
+  background-color: var(--fa-success);
+  box-shadow: 0 0 10px var(--fa-success);
+}
+
+.status-warning {
+  background-color: var(--fa-warning);
+  box-shadow: 0 0 10px var(--fa-warning);
+  animation: pulse 2s infinite;
+}
+
+.status-alarm {
+  background-color: var(--fa-danger);
+  box-shadow: 0 0 10px var(--fa-danger);
+  animation: alarm-pulse 1s infinite;
+}
+
+.status-stopped {
+  background-color: var(--fa-text-secondary);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes alarm-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* شبکه دوربین‌ها */
+.camera-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 20px;
+  padding: 20px;
+}
+
+@media (max-width: 768px) {
+  .camera-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* کارت دوربین */
+.camera-card {
+  position: relative;
+  background: var(--fa-panel);
+  border-radius: 8px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  transition: all 0.3s ease;
+}
+
+.camera-card:hover {
+  border-color: var(--fa-primary);
+  transform: translateY(-2px);
+}
+
+.camera-card.alarm {
+  border-color: var(--fa-danger);
+  animation: border-alarm 1s infinite;
+}
+
+@keyframes border-alarm {
+  0%, 100% { border-color: var(--fa-danger); }
+  50% { border-color: transparent; }
+}
+
+/* هدر دوربین */
+.camera-header {
+  background: rgba(0, 0, 0, 0.7);
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--fa-border);
+}
+
+.camera-title {
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--fa-primary);
+}
+
+/* بخش ویدیو */
+.video-container {
+  position: relative;
+  background: #000;
+  width: 100%;
+  height: 200px;
+  overflow: hidden;
+}
+
+.video-placeholder {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(45deg, #1a237e, #311b92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+}
+
+.video-overlay {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  left: 10px;
+  display: flex;
+  justify-content: space-between;
+  color: white;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  font-size: 0.85rem;
+}
+
+/* متریک‌ها */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  padding: 15px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.metric-item {
+  text-align: center;
+  padding: 8px;
+}
+
+.metric-value {
+  font-size: 1.2rem;
+  font-weight: 700;
+  font-family: 'Vazirmatn', monospace;
+  color: var(--fa-primary);
+}
+
+.metric-label {
+  font-size: 0.8rem;
+  color: var(--fa-text-secondary);
+  margin-top: 4px;
+}
+
+/* پنل آلارم */
+.alarm-panel {
+  background: rgba(244, 67, 54, 0.1);
+  border-right: 4px solid var(--fa-danger);
+  padding: 16px;
+  margin: 12px 0;
+  border-radius: 0 8px 8px 0;
+}
+
+.alarm-item {
+  padding: 10px;
+  margin: 6px 0;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  border-right: 3px solid;
+  transition: background 0.2s;
+}
+
+.alarm-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.alarm-critical {
+  border-right-color: var(--fa-danger);
+}
+
+.alarm-warning {
+  border-right-color: var(--fa-warning);
+}
+
+.alarm-info {
+  border-right-color: var(--fa-primary);
+}
+
+/* دکمه‌های کنترل */
+.control-button {
+  background: linear-gradient(145deg, #2a3b5a, #1b263b);
+  border: 1px solid var(--fa-border);
+  color: var(--fa-text);
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.3s;
+  font-family: 'Vazirmatn';
+  margin: 5px;
+  min-width: 100px;
+}
+
+.control-button:hover {
+  background: linear-gradient(145deg, #3a4b6a, #2a365b);
+  border-color: var(--fa-primary);
+  transform: translateY(-1px);
+}
+
+.control-button:active {
+  transform: translateY(0);
+}
+
+.control-button-primary {
+  background: linear-gradient(145deg, var(--fa-primary), #008394);
+  border-color: var(--fa-primary);
+  color: white;
+}
+
+.control-button-danger {
+  background: linear-gradient(145deg, var(--fa-danger), #b71c1c);
+  border-color: var(--fa-danger);
+  color: white;
+}
+
+.control-button-success {
+  background: linear-gradient(145deg, var(--fa-success), #2e7d32);
+  border-color: var(--fa-success);
+  color: white;
+}
+
+/* گیج‌ها */
+.gauge-container {
+  position: relative;
+  display: inline-block;
+}
+
+.gauge-value {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: 'Vazirmatn', monospace;
+  font-weight: 700;
+  font-size: 1.5rem;
+  color: var(--fa-text);
+  direction: ltr;
+}
+
+/* انیمیشن نوار نقاله */
+.conveyor-animation {
+  height: 4px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.2) 25%,
+    rgba(255, 255, 255, 0.4) 50%,
+    rgba(255, 255, 255, 0.2) 75%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: conveyor-move 2s linear infinite;
+}
+
+@keyframes conveyor-move {
+  0% { background-position: 200% 0; }
+  100% { background-position: 0 0; }
+}
+
+/* اسکرول بار */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--fa-border);
+  border-radius: 5px;
+}
+
+::-webkit-thumb:hover {
+  background: var(--fa-primary);
+}
+
+/* چاپ */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: white !important;
+    color: black !important;
+  }
+
+  .camera-card {
+    break-inside: avoid;
+    border: 1px solid #000 !important;
+  }
+}

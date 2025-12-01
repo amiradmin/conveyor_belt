@@ -1,33 +1,54 @@
 {
-  "name": "conveyor-monitoring-system",
+  "name": "steel-monitoring-fa",
+  "version": "0.1.0",
   "private": true,
-  "version": "1.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
-  },
   "dependencies": {
-    "@heroicons/react": "^2.0.18",
-    "axios": "^1.13.2",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-router-dom": "^6.8.0"
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@fontsource/vazirmatn": "^5.2.8",
+    "@mui/icons-material": "^6.5.0",
+    "@mui/material": "^6.5.0",
+    "@mui/x-charts": "^7.29.1",
+    "@mui/x-data-grid": "^7.29.12",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^13.5.0",
+    "jalaali-js": "^1.2.8",
+    "moment-jalaali": "^0.10.4",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-player": "^3.4.0",
+    "react-router-dom": "^7.9.6",
+    "react-scripts": "5.0.1",
+    "rtl-css-js": "^1.16.1",
+    "socket.io-client": "^4.8.1",
+    "stylis": "^4.3.6",
+    "stylis-plugin-rtl": "^2.1.1",
+    "web-vitals": "^2.1.4"
   },
-  "devDependencies": {
-    "@types/react": "^18.0.27",
-    "@types/react-dom": "^18.0.10",
-    "@vitejs/plugin-react": "^4.1.0",
-    "autoprefixer": "^10.4.14",
-    "eslint": "^8.38.0",
-    "eslint-plugin-react": "^7.32.2",
-    "eslint-plugin-react-hooks": "^4.6.0",
-    "eslint-plugin-react-refresh": "^0.3.4",
-    "postcss": "^8.4.24",
-    "tailwindcss": "^3.3.0",
-    "vazirmatn": "^33.0.3",
-    "vite": "^4.3.0"
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
   }
 }
