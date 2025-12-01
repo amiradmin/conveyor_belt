@@ -55,9 +55,10 @@ services:
     container_name: conveyor_nginx
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf
-      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./ssl:/etc/nginx/ssl
       - media_volume:/app/media
     depends_on:
       - backend
