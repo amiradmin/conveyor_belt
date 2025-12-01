@@ -1,8 +1,0 @@
-/* This file is intentionally left minimal because styling is done with styled-components */
-/* Add any global CSS here if needed */
-
-html, body, #root {
-  height: 100%;
-  margin: 0;
-  padding: 0;
-}

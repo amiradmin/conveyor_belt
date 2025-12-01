@@ -34,21 +34,22 @@ services:
       - conveyor_network
 
   frontend:
-    build: 
-      context: ./frontend
+    build: ./frontend
     container_name: conveyor_react
+    ports:
+      - "3000:3000"   # Host:Container
     volumes:
       - ./frontend:/app
       - /app/node_modules
-    ports:
-      - "5173:5173"  # Vite default port
     environment:
-      - VITE_API_URL=http://localhost:8000
-    command: npm run dev -- --host 0.0.0.0 --port 5173
+      - PORT=3000     # React dev server inside container
+      - REACT_APP_API_URL=http://localhost:8000
+    command: npm start
     depends_on:
       - backend
     networks:
       - conveyor_network
+
 
   nginx:
     image: nginx:alpine
