@@ -28,28 +28,24 @@ services:
     depends_on:
       - db
     environment:
-      - DATABASE_URL=postgres://conveyor_user:Conveyor@123@db:5432/conveyor_db
-      - DEBUG=True
+      DATABASE_URL: postgres://conveyor_user:Conveyor@123@db:5432/conveyor_db
+      DEBUG: "True"
     networks:
       - conveyor_network
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
     container_name: conveyor_react
-    ports:
-      - "3000:3000"   # Host:Container
     volumes:
       - ./frontend:/app
       - /app/node_modules
+    ports:
+      - "3000:3000"
     environment:
-      - PORT=3000     # React dev server inside container
-      - REACT_APP_API_URL=http://localhost:8000
-    command: npm start
-    depends_on:
-      - backend
+      - CHOKIDAR_USEPOLLING=true
     networks:
       - conveyor_network
-
 
   nginx:
     image: nginx:alpine
