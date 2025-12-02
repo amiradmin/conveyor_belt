@@ -188,3 +188,6 @@ CORS_ALLOW_HEADERS = [
     "x-requested-with",
 ]
 CORS_ALLOW_METHODS = ["GET", "POST", "OPTIONS"]
+
+
+CORS_ALLOW_CREDENTIALS = True

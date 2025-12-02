@@ -6,14 +6,14 @@ import { DraggableCore } from 'react-draggable';
 /*
 Props:
   beltId (number) - conveyor belt id in backend
-  apiBase (string) - base url, e.g. "http://localhost:8000/api/"
+  apiBase (string) - base url, e.g. "http://localhost:8000/api/camera/"
 */
 
 function deepClone(obj) {
   return JSON.parse(JSON.stringify(obj));
 }
 
-// --- Simple PLC emulator helpers ---
+// --- PLC helpers ---
 function evalExpr(expr, context) {
   try {
     const tokenized = expr.replace(/\b[A-Za-z_][A-Za-z0-9_.]*\b/g, (name) => {
@@ -72,7 +72,7 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
   const [sensorX, setSensorX] = useState(500);
   const sensorRef = useRef(null);
 
-  // fetch belt
+  // --- Fetch belt from backend ---
   useEffect(() => {
     async function fetchBelt() {
       try {
@@ -80,71 +80,62 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
         const data = res.data;
 
         setBelt(data);
+        setStyle(data.style || {
+          belt_color: 'url(#beltPattern)',
+          belt_width: 40,
+          roller_count: 6,
+          roller_color: '#555',
+          belt_length: 500,
+          object_color: 'steelblue',
+          sensor_color: 'yellow',
+          motor_color: '#777',
+        });
 
-        setStyle(
-          data.style || {
-            belt_color: 'url(#beltPattern)',
-            belt_width: 40,
-            roller_count: 6,
-            belt_length: 500,
-            object_color: 'steelblue',
-            motor_color: '#777',
-            sensor_color: 'yellow',
-          }
-        );
-
-        setPlc(
-          data.plc_logic || {
-            inputs: { start: false, stop: false, sensor_1: false },
-            timers: {},
-            counters: {},
-            rungs: [],
-            outputs: {},
-          }
-        );
+        setPlc({
+          inputs: data.plc_logic?.inputs || { start: false, stop: false, sensor_1: false },
+          outputs: data.plc_logic?.outputs || { motor_on: false },
+          timers: data.plc_logic?.timers || {},
+          counters: data.plc_logic?.counters || {},
+          rungs: data.plc_logic?.rungs || [], // safe default
+        });
 
         setObjects([{ id: 1, x: 120 }, { id: 2, x: 240 }, { id: 3, x: 360 }]);
-
         sensorRef.current = data.style?.sensor_x || 500;
         setSensorX(sensorRef.current);
       } catch (e) {
-        console.error('fetch belt error', e);
+        console.error('fetch belt', e);
       }
     }
     fetchBelt();
   }, [beltId, apiBase]);
 
-  // tick: animation + plc evaluation
+  // --- Tick: PLC + animation ---
   useEffect(() => {
     if (!plc) return;
     let runningFlag = true;
 
     function tick() {
       if (!runningFlag) return;
-
       const now = Date.now();
       const dt = now - lastTimeRef.current;
       lastTimeRef.current = now;
 
-      const motorOn = !!plc?.outputs?.motor_on;
+      const motorOn = !!(plc.outputs?.motor_on);
       const speed = belt?.current_speed || 1.0;
       const pxPerSec = 40 * speed;
 
       if (motorOn && running) {
         setOffset((o) => (o + (pxPerSec * (dt / 1000))) % 80);
-        setObjects((prev) =>
-          prev.map((obj) => ({ ...obj, x: obj.x + pxPerSec * (dt / 1000) }))
-        );
+        setObjects((prev) => prev.map((obj) => ({ ...obj, x: obj.x + (pxPerSec * (dt / 1000)) })));
       }
 
-      const sensorPos = sensorRef.current || 500;
+      const sensorPos = sensorRef.current;
       let sensorTriggered = false;
-
       setObjects((prev) =>
         prev.map((o) => {
           if (!o.triggered && o.x >= sensorPos - 5 && o.x <= sensorPos + 5) {
             sensorTriggered = true;
-            return { ...o, triggered: true };
+            o.triggered = true;
           }
           return o;
         })
@@ -153,7 +144,7 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
       if (!plc.inputs) plc.inputs = {};
       plc.inputs.sensor_1 = sensorTriggered;
 
-      Object.entries(plc?.timers || {}).forEach(([k, t]) => {
+      Object.entries(plc.timers || {}).forEach(([k, t]) => {
         if (t.type === 'TON') {
           if (t.running) {
             t.acc_ms = (t.acc_ms || 0) + dt;
@@ -165,24 +156,20 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
         }
       });
 
-      const ctx = {
-        inputs: plc.inputs || {},
-        timers: plc.timers || {},
-        counters: plc.counters || {},
-        outputs: plc.outputs || {},
-      };
+      const ctx = { inputs: plc.inputs, timers: plc.timers, counters: plc.counters, outputs: plc.outputs };
 
-      for (const rung of plc.rungs || []) {
-        const hold = evalExpr(rung.expr, ctx);
-        if (hold) applyActions(rung.actions, ctx);
+      if (Array.isArray(plc.rungs)) {
+        for (const rung of plc.rungs) {
+          if (evalExpr(rung.expr, ctx)) applyActions(rung.actions, ctx);
+        }
       }
 
       setPlc({ ...plc, inputs: ctx.inputs, timers: ctx.timers, counters: ctx.counters, outputs: ctx.outputs });
 
-      // Remove objects off-belt
+      // Remove objects past end
       setObjects((prev) => prev.filter((o) => o.x < 580));
 
-      // Re-add objects if less than desired
+      // Auto-add objects if needed
       const desired = style?.initial_objects || 3;
       setObjects((prev) => {
         if (prev.length < desired) {
@@ -205,6 +192,7 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
     };
   }, [plc, running, belt, style]);
 
+  // --- Controls ---
   const toggleStart = () => {
     if (!plc) return;
     const newPlc = deepClone(plc);
@@ -214,7 +202,6 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
     setRunning(true);
     setLog((l) => [`Start pressed @ ${new Date().toLocaleTimeString()}`, ...l].slice(0, 50));
   };
-
   const toggleStop = () => {
     if (!plc) return;
     const newPlc = deepClone(plc);
@@ -246,49 +233,85 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
 
   if (!belt || !plc || !style) return <div>Loading simulator...</div>;
 
-  const outputs = plc?.outputs || {};
+  const outputs = plc.outputs || {};
 
   return (
     <div style={{ display: 'flex', gap: 20 }}>
       <div>
         <h3>{belt.name} (Simulator)</h3>
-        <svg ref={svgRef} width={940} height={180} style={{ border: '1px solid #ddd', background: '#fafafa' }}>
-          <defs>
-            <pattern id="beltPattern" width="40" height="20" patternUnits="userSpaceOnUse">
-              <rect x="0" y="0" width="20" height="20" fill="#bdbdbd" />
-              <rect x="20" y="0" width="20" height="20" fill="#9e9e9e" />
-            </pattern>
-          </defs>
+       <svg width={1000} height={200} style={{ border: '1px solid #ddd', background: '#fafafa' }}>
+  {/* Belt surface */}
+  <rect
+    x={60}
+    y={100}  // belt y-position
+    width={style.belt_length}
+    height={style.belt_width}
+    fill={style.belt_color || '#5a5a5a'}
+    rx={6}
+    stroke="#333"
+  />
 
-          <rect x="60" y="60" width={style.belt_length} height={style.belt_width} fill={style.belt_color} rx="6" stroke="#666" />
+  {/* Rollers underneath the belt */}
+  {Array.from({ length: style.roller_count }).map((_, i) => {
+    const cx = 60 + i * (style.belt_length / (style.roller_count - 1));
+    const cy = 100 + style.belt_width + 10; // below belt
+    return (
+      <circle
+        key={i}
+        cx={cx}
+        cy={cy}
+        r={10}
+        fill={style.roller_color || '#444'}
+        stroke="#222"
+      />
+    );
+  })}
 
-          {Array.from({ length: style.roller_count || 6 }).map((_, i) => {
-            const cx = 90 + i * ((style.belt_length || 500) / ((style.roller_count || 6) - 1));
-            return <circle key={i} cx={cx} cy={80 + (style.belt_width || 40) / 2} r={10} fill={style.roller_color || '#555'} />;
-          })}
+  {/* Objects (ore pieces) on top of the belt */}
+  {objects.map((o) => (
+    <rect
+      key={o.id}
+      x={o.x}
+      y={100 - 20} // object sits above belt
+      width={24}
+      height={24}
+      rx={4}
+      fill={style.object_color || '#8b4513'}
+      stroke="#222"
+    />
+  ))}
 
-          {objects.map((o) => (
-            <rect key={o.id} x={o.x} y={70} width={24} height={24} rx={4} fill={style.object_color || 'steelblue'} stroke="#222" />
-          ))}
+  {/* Sensor vertical */}
+  <DraggableCore
+    axis="x"
+    bounds={{ left: 60, right: 60 + style.belt_length - 10 }}
+    onDrag={onSensorDrag}
+  >
+    <rect
+      ref={sensorRef}
+      x={sensorX - 5}
+      y={80} // slightly above belt
+      width={10}
+      height={60} // covers belt height
+      fill={style.sensor_color || 'yellow'}
+      stroke="#333"
+      style={{ cursor: 'grab' }}
+    />
+  </DraggableCore>
 
-          <DraggableCore axis="x" bounds={{ left: 60, right: 60 + (style.belt_length || 500) - 10 }} onDrag={onSensorDrag}>
-            <rect
-              ref={sensorRef}
-              x={sensorX - 5}
-              y={50}
-              width={10}
-              height={60}
-              fill={style.sensor_color || 'yellow'}
-              stroke="#333"
-              style={{ cursor: 'grab' }}
-            />
-          </DraggableCore>
+  {/* Motor */}
+  <rect
+    x={30}
+    y={100 + style.belt_width / 2 - 12}
+    width={24}
+    height={24}
+    fill={style.motor_color || '#222'}
+  />
+  <text x={10} y={100 + style.belt_width + 40} fontSize={12}>
+    Motor
+  </text>
+</svg>
 
-          <rect x={30} y={110} width={24} height={24} fill={style.motor_color || '#777'} />
-          <text x={10} y={150} fontSize={12}>
-            Motor
-          </text>
-        </svg>
 
         <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
           <button onClick={toggleStart}>Start</button>
