@@ -11,3 +11,4 @@ channels-redis
 daphne
 ultralytics==8.2.77
 opencv-python
+django-extensions

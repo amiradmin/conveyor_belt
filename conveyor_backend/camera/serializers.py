@@ -3,6 +3,13 @@ from rest_framework import serializers
 from .models import Camera, ConveyorBelt, Alert
 
 
+class CameraAlertSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Alert
+        fields = ['id', 'message', 'timestamp', 'resolved']
+
+
+
 class CameraSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source='get_status_display', read_only=True)
 
@@ -24,7 +31,7 @@ class ConveyorBeltSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'camera', 'camera_name', 'status', 'status_display',
             'current_speed', 'average_efficiency', 'last_maintenance',
-            'video', 'video_url'
+            'video', 'video_url','plc_logic','style'
         ]
 
 

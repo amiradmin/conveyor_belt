@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'camera',
     'corsheaders',
+    'django_extensions',
     "channels",
     "lab",
 ]
@@ -170,8 +171,9 @@ CORS_ALLOWED_ORIGINS = [
 
 ]
 
-ASGI_APPLICATION = "conveyor_backend.asgi.application"
+ASGI_APPLICATION = 'conveyor_backend.asgi.application'
 
+# Optional: in-memory channel layer for development
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels.layers.InMemoryChannelLayer"

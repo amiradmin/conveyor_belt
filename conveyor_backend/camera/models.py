@@ -47,6 +47,8 @@ class ConveyorBelt(models.Model):
     last_maintenance = models.DateField(null=True, blank=True, verbose_name="آخرین تعمیر")
     video = models.FileField(upload_to='conveyor_videos/', null=True, blank=True, verbose_name="فیلم نوار نقاله")
     video_url = models.URLField(max_length=500, null=True, blank=True, verbose_name="آدرس فیلم")
+    style = models.JSONField(default=dict, blank=True, null=True, verbose_name="Style JSON")
+    plc_logic = models.JSONField(default=dict, blank=True, null=True, verbose_name="PLC Logic JSON")
 
     class Meta:
         verbose_name = "نوار نقاله"

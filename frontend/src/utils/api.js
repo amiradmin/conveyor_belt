@@ -2,7 +2,7 @@
 import axios from 'axios';
 
 // URLs
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/camera';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/camera/';
 const WS_BASE_URL = process.env.REACT_APP_WS_URL || 'ws://localhost:8000/ws';
 
 // Create axios instance with default config
@@ -55,14 +55,14 @@ export const cameraAPI = {
   updateCameraStatus: (id, status) => api.post(`/cameras/${id}/update_status/`, { status }),
 
   // Belts
-  getAllBelts: () => api.get('/conveyor-belts/'),
-  getBelt: (id) => api.get(`/conveyor-belts/${id}/`),
+  getAllBelts: () => api.get('/camera/conveyor-belts/'),
+  getBelt: (id) => api.get(`/camera/conveyor-belts/${id}/`),
   getBeltsWithCameras: () => api.get('/belts-cameras/'),
-  updateBeltSpeed: (id, speed) => api.post(`/conveyor-belts/${id}/update_speed/`, { speed }),
+  updateBeltSpeed: (id, speed) => api.post(`/camera/conveyor-belts/${id}/update_speed/`, { speed }),
   getCameraBelts: (cameraId) => api.get(`/cameras/${cameraId}/belts/`),
 
   // Alerts
-  getAllAlerts: () => api.get('/alerts/'),
+  getAllAlerts: () => api.get('/alerts/unresolved/'),
   getUnresolvedAlerts: () => api.get('/alerts/unresolved/'),
   getAlertsBySeverity: () => api.get('/alerts/by_severity/'),
   resolveAlert: (id) => api.post(`/alerts/${id}/resolve/`),
@@ -90,11 +90,12 @@ export const cameraAPI = {
 };
 
 // WebSocket Service
+// src/utils/api.js
 class WebSocketService {
   constructor() {
-    this.socket = null;
+    this.sockets = {}; // keep multiple sockets per type
     this.callbacks = new Map();
-    this.reconnectAttempts = 0;
+    this.reconnectAttempts = {}; // track per socket
     this.maxReconnectAttempts = 5;
     this.reconnectDelay = 1000;
   }
@@ -108,19 +109,21 @@ class WebSocketService {
   }
 
   connect(url, type) {
-    if (this.socket?.readyState === WebSocket.OPEN) {
-      this.socket.close();
+    if (this.sockets[type]?.readyState === WebSocket.OPEN) {
+      this.sockets[type].close();
     }
 
-    this.socket = new WebSocket(url);
+    const socket = new WebSocket(url);
+    this.sockets[type] = socket;
+    this.reconnectAttempts[type] = this.reconnectAttempts[type] || 0;
 
-    this.socket.onopen = () => {
+    socket.onopen = () => {
       console.log(`${type} WebSocket connected`);
-      this.reconnectAttempts = 0;
+      this.reconnectAttempts[type] = 0;
       this.triggerCallbacks('connected', { type });
     };
 
-    this.socket.onmessage = (event) => {
+    socket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
         this.triggerCallbacks('message', { type, data });
@@ -130,21 +133,21 @@ class WebSocketService {
       }
     };
 
-    this.socket.onclose = (event) => {
+    socket.onclose = (event) => {
       console.log(`${type} WebSocket disconnected:`, event.code, event.reason);
       this.triggerCallbacks('disconnected', { type, code: event.code, reason: event.reason });
 
       // Reconnect logic
-      if (this.reconnectAttempts < this.maxReconnectAttempts) {
+      if (this.reconnectAttempts[type] < this.maxReconnectAttempts) {
         setTimeout(() => {
-          this.reconnectAttempts++;
-          console.log(`Reconnecting ${type} (attempt ${this.reconnectAttempts})...`);
+          this.reconnectAttempts[type]++;
+          console.log(`Reconnecting ${type} (attempt ${this.reconnectAttempts[type]})...`);
           this.connect(url, type);
-        }, this.reconnectDelay * this.reconnectAttempts);
+        }, this.reconnectDelay * this.reconnectAttempts[type]);
       }
     };
 
-    this.socket.onerror = (error) => {
+    socket.onerror = (error) => {
       console.error(`${type} WebSocket error:`, error);
       this.triggerCallbacks('error', { type, error });
     };
@@ -161,29 +164,35 @@ class WebSocketService {
     if (this.callbacks.has(event)) {
       const callbacks = this.callbacks.get(event);
       const index = callbacks.indexOf(callback);
-      if (index > -1) {
-        callbacks.splice(index, 1);
-      }
+      if (index > -1) callbacks.splice(index, 1);
     }
   }
 
   triggerCallbacks(event, data) {
     if (this.callbacks.has(event)) {
-      this.callbacks.get(event).forEach(callback => callback(data));
+      this.callbacks.get(event).forEach((callback) => callback(data));
     }
   }
 
-  send(data) {
-    if (this.socket?.readyState === WebSocket.OPEN) {
-      this.socket.send(JSON.stringify(data));
+  send(type, data) {
+    const socket = this.sockets[type];
+    if (socket?.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify(data));
+    } else {
+      console.warn(`WebSocket ${type} is not open, cannot send message.`);
     }
   }
 
-  disconnect() {
-    if (this.socket) {
-      this.socket.close();
-      this.socket = null;
+  disconnect(type) {
+    const socket = this.sockets[type];
+    if (socket) {
+      socket.close();
+      delete this.sockets[type];
     }
+  }
+
+  disconnectAll() {
+    Object.keys(this.sockets).forEach((type) => this.disconnect(type));
   }
 }
 

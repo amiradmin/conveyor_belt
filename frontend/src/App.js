@@ -11,6 +11,8 @@ import { faTheme } from './theme/faTheme';
 import MainLayout from './components/layout/MainLayout';
 import MainDashboard from './pages/MainDashboard';
 import BeltDetail from './pages/BeltDetail';
+import BeltSimulator from './pages/BeltSimulator';
+
 
 import { ConveyorProvider } from './contexts/ConveyorContext';
 import { SnackbarProvider } from './contexts/SnackbarContext';
@@ -41,6 +43,8 @@ function App() {
                   <Route path="/" element={<MainLayout />}>
                     <Route index element={<MainDashboard />} />
                     <Route path="belt/:id" element={<BeltDetail />} />
+                    <Route path="simulator" element={<BeltSimulator />} />
+
 
                   </Route>
                 </Routes>
