@@ -5,28 +5,56 @@ export function deepClone(obj) {
 
 export function evalExpr(expr, context) {
   try {
+    // Replace variable names with their actual values
     const tokenized = expr.replace(/\b[A-Za-z_][A-Za-z0-9_.]*\b/g, (name) => {
       const parts = name.split('.');
       let v = context;
+
       for (let p of parts) {
-        if (v && p in v) v = v[p];
-        else return 'false';
+        if (v && typeof v === 'object' && p in v) {
+          v = v[p];
+        } else {
+//          console.log(`Variable ${name} not found in context`);
+          return 'false';
+        }
       }
-      if (typeof v === 'boolean') return v ? 'true' : 'false';
-      if (typeof v === 'number') return String(v);
-      if (typeof v === 'object' && v !== null && 'state' in v) return v.state ? 'true' : 'false';
+
+      // Handle different types
+      if (typeof v === 'boolean') {
+        return v ? 'true' : 'false';
+      }
+      if (typeof v === 'number') {
+        return String(v);
+      }
+      if (typeof v === 'object' && v !== null && 'state' in v) {
+        return v.state ? 'true' : 'false';
+      }
+      if (typeof v === 'object' && v !== null && 'value' in v) {
+        return v.value ? 'true' : 'false';
+      }
+
       return JSON.stringify(v);
     });
+
+//    console.log(`Evaluating expression: ${expr}`);
+//    console.log(`Tokenized expression: ${tokenized}`);
+
     const fn = new Function(`return (${tokenized});`);
-    return !!fn();
+    const result = !!fn();
+
+//    console.log(`Expression result: ${result}`);
+    return result;
+
   } catch (e) {
-    console.warn('expr eval error', expr, e);
+//    console.warn('expr eval error', expr, e);
     return false;
   }
 }
 
 export function applyActions(actions, ctx) {
   if (!actions || !Array.isArray(actions)) return;
+
+//  console.log('Applying actions:', actions);
 
   for (const a of actions) {
     if (!a || !a.type) continue;
@@ -39,6 +67,7 @@ export function applyActions(actions, ctx) {
 
       if (a.name === 'motor_on') {
         ctx.outputs[a.name] = !!a.value;
+//        console.log(`Set motor_on to: ${!!a.value}`);
       } else if (a.name === 'count_signal' || (typeof a.value === 'string' && a.value.includes('count_signal'))) {
         ctx.outputs[a.name] = (ctx.outputs[a.name] || 0) + 1;
       } else {
@@ -55,16 +84,19 @@ export function applyActions(actions, ctx) {
       } else {
         ctx.counters[a.name] = (ctx.counters[a.name] || 0) + 1;
       }
+//      console.log(`Incremented counter ${a.name}`);
     } else if (a.type === 'set_flag') {
       if (!a.name) continue;
 
       // Ensure flags exists
       if (!ctx.flags) ctx.flags = {};
       ctx.flags[a.name] = !!a.value;
+//      console.log(`Set flag ${a.name} to: ${!!a.value}`);
     }
   }
 }
 
+// SIMPLIFIED PLC LOGIC THAT WILL WORK
 export const defaultPLC = {
   inputs: {
     start: false,
@@ -76,7 +108,7 @@ export const defaultPLC = {
     safety_gate: true
   },
   outputs: {
-    motor_on: false,
+    motor_on: true,
     alarm: false,
     count_signal: 0,
     running_indicator: false
@@ -88,22 +120,22 @@ export const defaultPLC = {
   },
   flags: {
     fault_active: false,
-    start_sealed: false
+    start_sealed: false,
+    jam_detected: false
   },
   rungs: [
     {
       id: 1,
-      description: "Emergency Stop Safety Circuit",
-      expr: "inputs.emergency_stop == true && inputs.safety_gate == true",
+      description: "Emergency Stop and Safety Check",
+      expr: "inputs.emergency_stop && inputs.safety_gate",
       actions: [
-        { "type": "set_output", "name": "motor_on", "value": false },
-        { "type": "set_flag", "name": "fault_active", "value": true }
+        { "type": "set_flag", "name": "fault_active", "value": false }
       ]
     },
     {
       id: 2,
-      description: "Motor Start Circuit with Seal-in",
-      expr: "(inputs.start == true || flags.start_sealed == true) && inputs.stop == true && flags.fault_active == false",
+      description: "Motor Start - Simple Version",
+      expr: "inputs.start && inputs.stop && !flags.fault_active",
       actions: [
         { "type": "set_output", "name": "motor_on", "value": true },
         { "type": "set_flag", "name": "start_sealed", "value": true }
@@ -111,20 +143,20 @@ export const defaultPLC = {
     },
     {
       id: 3,
-      description: "Object Counting at Sensor 2",
-      expr: "inputs.sensor_2 == true && outputs.motor_on == true",
+      description: "Motor Stop",
+      expr: "!inputs.stop",
       actions: [
-        { "type": "inc_counter", "name": "object_counter" },
-        { "type": "inc_counter", "name": "today_parts" }
+        { "type": "set_output", "name": "motor_on", "value": false },
+        { "type": "set_flag", "name": "start_sealed", "value": false }
       ]
     },
     {
       id: 4,
-      description: "Stop button pressed",
-      expr: "inputs.stop == false",
+      description: "Object Counting",
+      expr: "inputs.sensor_2 && outputs.motor_on",
       actions: [
-        { "type": "set_output", "name": "motor_on", "value": false },
-        { "type": "set_flag", "name": "start_sealed", "value": false }
+        { "type": "inc_counter", "name": "object_counter" },
+        { "type": "inc_counter", "name": "today_parts" }
       ]
     }
   ]
@@ -176,7 +208,7 @@ export const defaultStyle = {
   sensor_x: 300,
   sensor_2_x: 600,
   camera_x: 50,
-  camera_y: 10,
+  camera_y: 20,
   belt_running_color: "#4CAF50",
   belt_stopped_color: "#F44336",
   camera_led_color: "#0080FF",

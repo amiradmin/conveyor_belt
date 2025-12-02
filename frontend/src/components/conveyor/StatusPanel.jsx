@@ -2,8 +2,35 @@
 import React from 'react';
 
 export default function StatusPanel({ plc, currentSpeed, apiBase, beltId, style }) {
-  const motorStatus = plc?.outputs?.motor_on ? 'ON' : 'OFF';
-  const partsCount = plc?.outputs?.count_signal || plc?.counters?.object_counter || 0;
+  // Helper function to get values from either structure
+  const getMotorStatus = () => {
+    if (!plc || !plc.outputs) return 'OFF';
+
+    const motorOn = plc.outputs.motor_on ||
+                   (plc.outputs.digital_outputs && plc.outputs.digital_outputs.motor_on && plc.outputs.digital_outputs.motor_on.state);
+
+    return motorOn ? 'ON' : 'OFF';
+  };
+
+  const getPartsCount = () => {
+    if (!plc || !plc.counters) return 0;
+
+    return plc.counters.object_counter ||
+           (plc.counters.object_counter && typeof plc.counters.object_counter === 'object' ? plc.counters.object_counter.current : 0);
+  };
+
+  const getAlarmStatus = () => {
+    if (!plc || !plc.outputs) return 'OK';
+
+    const alarm = plc.outputs.alarm ||
+                  (plc.outputs.digital_outputs && plc.outputs.digital_outputs.alarm && plc.outputs.digital_outputs.alarm.state);
+
+    return alarm ? 'ACTIVE' : 'OK';
+  };
+
+  const motorStatus = getMotorStatus();
+  const partsCount = getPartsCount();
+  const alarmStatus = getAlarmStatus();
 
   return (
     <div style={{
@@ -36,9 +63,9 @@ export default function StatusPanel({ plc, currentSpeed, apiBase, beltId, style 
           <div style={{
             fontSize: '24px',
             fontWeight: 'bold',
-            color: plc?.outputs?.alarm ? '#FF5722' : '#4CAF50'
+            color: alarmStatus === 'ACTIVE' ? '#FF5722' : '#4CAF50'
           }}>
-            {plc?.outputs?.alarm ? 'ACTIVE' : 'OK'}
+            {alarmStatus}
           </div>
         </div>
         <div>
@@ -55,7 +82,7 @@ export default function StatusPanel({ plc, currentSpeed, apiBase, beltId, style 
         <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
           <div>API: {apiBase}</div>
           <div>Belt ID: {beltId}</div>
-          <div>Style loaded: {style?.id ? 'Yes' : 'No'}</div>
+          <div>Belt Width: {style?.belt_width}px</div>
         </div>
       </div>
     </div>

@@ -127,7 +127,7 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
       const dt = now - lastTimeRef.current;
       lastTimeRef.current = now;
 
-      const motorOn = true;
+      const motorOn = !!plc.outputs?.motor_on;
       const pxPerSec = currentSpeed * 40;
 
       // Move objects if motor is on
