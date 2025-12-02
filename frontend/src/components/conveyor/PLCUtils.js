@@ -164,13 +164,14 @@ export const defaultPLC = {
 
 // Map backend style properties to frontend properties
 export function normalizeStyle(backendStyle) {
+console.log(backendStyle.style.belt_width);
   if (!backendStyle) return defaultStyle;
 
   return {
     // Map new backend properties to old frontend properties
-    belt_color: backendStyle.belt_color || defaultStyle.belt_color,
-    belt_length: backendStyle.belt_length || defaultStyle.belt_length,
-    belt_width: backendStyle.belt_width || defaultStyle.belt_width,
+    belt_color: backendStyle.style.belt_color || defaultStyle.belt_color,
+    belt_length: backendStyle.style.belt_length || defaultStyle.belt_length,
+    belt_width: backendStyle.style.belt_width || defaultStyle.belt_width,
     roller_count: backendStyle.roller_count || defaultStyle.roller_count,
     roller_color: backendStyle.roller_color || defaultStyle.roller_color,
     object_color: backendStyle.object_color || defaultStyle.object_color,
@@ -197,7 +198,7 @@ export function normalizeStyle(backendStyle) {
 export const defaultStyle = {
   belt_color: "#5a5a5a",
   belt_length: 800,
-  belt_width: 30,
+  belt_width: 50,
   roller_count: 8,
   roller_color: "#444",
   object_color: "#8b4513",

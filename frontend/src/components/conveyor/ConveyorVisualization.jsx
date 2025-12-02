@@ -10,11 +10,12 @@ export default function ConveyorVisualization({
   onSensorDrag,
   onCameraClick
 }) {
+    console.log(style.style.belt_width);
   const motorStatus = plc?.outputs?.motor_on ? 'ON' : 'OFF';
   // Use the running/stopped color based on motor status
   const beltColor = motorStatus === 'ON'
-    ? (style?.belt_running_color || '#4CAF50')
-    : (style?.belt_stopped_color || style?.belt_color || "#5a5a5a");
+    ? (style?.style.belt_running_color || '#4CAF50')
+    : (style?.style.belt_stopped_color || style?.style.belt_color || "#5a5a5a");
 
   return (
     <div style={{
@@ -34,40 +35,40 @@ export default function ConveyorVisualization({
         borderRadius: '4px',
         fontSize: '12px'
       }}>
-        Style ID: {style?.id || 'local'}
+        Style ID: {style?.style.id || 'local'}
       </div>
 
-      <svg width={(style?.belt_length || 800) + 100} height={220} style={{ display: 'block', margin: '0 auto' }}>
+      <svg width={(style?.style.belt_length || 800) + 100} height={220} style={{ display: 'block', margin: '0 auto' }}>
         {/* Belt Surface */}
         <defs>
-          <pattern id="beltPattern" width="80" height={style?.belt_width || 30} patternUnits="userSpaceOnUse">
-            <rect width="80" height={style?.belt_width || 30} fill={beltColor} />
-            <line x1="0" y1={(style?.belt_width || 30)/2} x2="80" y2={(style?.belt_width || 30)/2} stroke="#444" strokeWidth="1" />
+          <pattern id="beltPattern" width="80" height={style?.style.belt_width || 30} patternUnits="userSpaceOnUse">
+            <rect width="80" height={style?.style.belt_width || 30} fill={beltColor} />
+            <line x1="0" y1={(style?.style.belt_width || 30)/2} x2="80" y2={(style?.style.belt_width || 30)/2} stroke="#444" strokeWidth="1" />
           </pattern>
         </defs>
 
         <g transform={`translate(${offset}, 0)`}>
-          <rect x={50} y={100} width={style?.belt_length || 800} height={style?.belt_width || 30}
+          <rect x={50} y={100} width={style?.style.belt_length || 800} height={style?.style.belt_width || 30}
             fill="url(#beltPattern)" rx={6} stroke="#555" strokeWidth="2" />
         </g>
 
         {/* Rollers */}
-        {Array.from({ length: style?.roller_count || 8 }).map((_, i) => (
+        {Array.from({ length: style?.style.roller_count || 8 }).map((_, i) => (
           <circle key={i}
-            cx={50 + i * ((style?.belt_length || 800) / ((style?.roller_count || 8) - 1))}
-            cy={115 + (style?.belt_width || 30) / 2}
+            cx={50 + i * ((style?.style.belt_length || 800) / ((style?.roller_count || 8) - 1))}
+            cy={115 + (style?.style.belt_width || 30) / 2}
             r={10}
-            fill={style?.roller_color || "#444"}
+            fill={style?.style.roller_color || "#444"}
           />
         ))}
 
         {/* Objects */}
         {objects.map(o => (
-          <rect key={o.id} x={o.x} y={105} width={20} height={20} rx={3} fill={style?.object_color || "#8b4513"} />
+          <rect key={o.id} x={o.x} y={105} width={20} height={20} rx={3} fill={style?.style.object_color || "#8b4513"} />
         ))}
 
         {/* Sensors */}
-        <DraggableCore axis="x" onDrag={d => onSensorDrag('s1', d)} bounds={{ left: 50, right: 50 + (style?.belt_length || 800) }}>
+        <DraggableCore axis="x" onDrag={d => onSensorDrag('s1', d)} bounds={{ left: 50, right: 50 + (style?.style.belt_length || 800) }}>
           <g style={{ cursor: 'grab' }}>
             <rect x={(style?.sensor_x || 300) - 5} y={90} width={10} height={50}
               fill={style?.sensor_color || "yellow"} stroke="#333" />
@@ -92,23 +93,23 @@ export default function ConveyorVisualization({
         </DraggableCore>
 
         {/* Motor */}
-        <rect x={(style?.belt_length || 800) - 30} y={80} width={30} height={40}
-          fill={style?.motor_color || "#222"} stroke="#666" strokeWidth="1" />
-        <circle cx={(style?.belt_length || 800) - 15} cy={100} r="8"
+        <rect x={(style?.style.belt_length || 800) - 30} y={80} width={30} height={40}
+          fill={style?.style.motor_color || "#222"} stroke="#666" strokeWidth="1" />
+        <circle cx={(style?.style.belt_length || 800) - 15} cy={100} r="8"
           fill="#666"
           style={{ animation: motorStatus === 'ON' ? 'rotate 2s linear infinite' : 'none' }} />
-        <text x={(style?.belt_length || 800) - 15} y={75} textAnchor="middle" fontSize="10" fill="white">
+        <text x={(style?.style.belt_length || 800) - 15} y={75} textAnchor="middle" fontSize="10" fill="white">
           Motor
         </text>
 
         {/* Camera - positioned according to style */}
         <g onClick={onCameraClick} style={{ cursor: 'pointer' }}>
-          <rect x={style?.camera_x || 50} y={style?.camera_y || 10} width={30} height={20}
-            fill={style?.camera_color || "#0080ff"} rx={4} />
-          <circle cx={(style?.camera_x || 50) + 22} cy={(style?.camera_y || 10) + 10} r="4" fill="#000" />
-          <circle cx={(style?.camera_x || 50) + 22} cy={(style?.camera_y || 10) + 10} r="2"
-            fill={style?.camera_led_color || "#0080FF"} />
-          <text x={style?.camera_x || 50} y={(style?.camera_y || 10) - 5} fontSize="10" fill={style?.camera_color || "#0080ff"}>
+          <rect x={style?.style.camera_x || 50} y={style?.style.camera_y || 10} width={30} height={20}
+            fill={style?.style.camera_color || "#0080ff"} rx={4} />
+          <circle cx={(style?.style.camera_x || 50) + 22} cy={(style?.style.camera_y || 10) + 10} r="4" fill="#000" />
+          <circle cx={(style?.style.camera_x || 50) + 22} cy={(style?.style.camera_y || 10) + 10} r="2"
+            fill={style?.style.camera_led_color || "#0080FF"} />
+          <text x={style?.style.camera_x || 50} y={(style?.style.camera_y || 10) - 5} fontSize="10" fill={style?.style.camera_color || "#0080ff"}>
             Cam
           </text>
         </g>
@@ -123,11 +124,11 @@ export default function ConveyorVisualization({
 
       {/* Style Info */}
       <div style={{ marginTop: '10px', fontSize: '11px', color: '#BDBDBD', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-        <div>Belt: {style?.belt_length || 800}px × {style?.belt_width || 30}px</div>
-        <div>Color: <span style={{ color: style?.belt_color || "#5a5a5a" }}>■ {style?.belt_color}</span></div>
-        <div>Rollers: {style?.roller_count || 8}</div>
-        <div>Motor: <span style={{ color: style?.motor_color || "#222" }}>■</span></div>
-        <div>Camera: {style?.camera_x}, {style?.camera_y}</div>
+        <div>Belt: {style?.style.belt_length || 800}px × {style?.style.belt_width || 30}px</div>
+        <div>Color: <span style={{ color: style?.style.belt_color || "#5a5a5a" }}>■ {style?.belt_color}</span></div>
+        <div>Rollers: {style?.style.roller_count || 8}</div>
+        <div>Motor: <span style={{ color: style?.style.motor_color || "#222" }}>■</span></div>
+        <div>Camera: {style?.style.camera_x}, {style?.style.camera_y}</div>
       </div>
     </div>
   );

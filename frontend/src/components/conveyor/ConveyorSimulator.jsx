@@ -66,10 +66,7 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
         console.log('Setting style from backend (normalized):', data.style);
         const normalizedStyle = normalizeStyle(data.style);
         console.log('Normalized style:', normalizedStyle);
-        setStyle(normalizedStyle);
-      } else {
-        // Only use defaults if backend has no style
-        setStyle(defaultStyle);
+        setStyle(data.style);
       }
 
       // Always use backend PLC data with proper initialization
@@ -167,13 +164,13 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
       newPlc.inputs.sensor_2 = s2Triggered;
 
       // Evaluate all rungs
-      console.log('Evaluating PLC rungs...');
+//       console.log('Evaluating PLC rungs...');
       for (const rung of newPlc.rungs || []) {
         const hold = evalExpr(rung.expr, newPlc);
-        console.log(`Rung ${rung.id} (${rung.description}): ${hold ? 'TRUE' : 'FALSE'}`);
+//         console.log(`Rung ${rung.id} (${rung.description}): ${hold ? 'TRUE' : 'FALSE'}`);
         if (hold) {
           applyActions(rung.actions || [], newPlc);
-          console.log(`Applied actions for rung ${rung.id}`);
+//           console.log(`Applied actions for rung ${rung.id}`);
         }
       }
 
@@ -183,7 +180,7 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
       }
 
       // Debug: Check motor state
-      console.log('Motor state:', newPlc.outputs?.motor_on ? 'ON' : 'OFF');
+//       console.log('Motor state:', newPlc.outputs?.motor_on ? 'ON' : 'OFF');
 
       // Update PLC state
       setPlc(newPlc);
@@ -211,13 +208,13 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
     if (!newPlc.inputs) newPlc.inputs = {};
     newPlc.inputs.start = true;
     newPlc.inputs.stop = true;
-    console.log('Updated PLC inputs:', newPlc.inputs);
+//     console.log('Updated PLC inputs:', newPlc.inputs);
     setPlc(newPlc);
     setLog(l => [`Start pressed @ ${new Date().toLocaleTimeString()}`, ...l].slice(0, 50));
   };
 
   const toggleStop = () => {
-    console.log('Stop button clicked');
+//     console.log('Stop button clicked');
     const newPlc = deepClone(plc);
     if (!newPlc.inputs) newPlc.inputs = {};
     newPlc.inputs.stop = false;
@@ -270,7 +267,7 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
         saveData.plc_logic = plc;
       }
 
-      console.log('Saving to backend:', saveData);
+//       console.log('Saving to backend:', saveData);
       await axios.patch(`${apiBase}conveyor-belts/${beltId}/`, saveData);
       setLog(l => [`Config saved to backend @ ${new Date().toLocaleTimeString()}`, ...l].slice(0, 50));
 
