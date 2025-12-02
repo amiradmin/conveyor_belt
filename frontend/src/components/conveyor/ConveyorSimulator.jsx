@@ -19,6 +19,11 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
   const [showVideoModal, setShowVideoModal] = useState(false);
   const [currentSpeed, setCurrentSpeed] = useState(1);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  // Add these states to your ConveyorSimulator component
+  const [showProcessedFeed, setShowProcessedFeed] = useState(false);
+  const [showVideoSection, setShowVideoSection] = useState(false); // New state to control video section visibility
+
   const rafRef = useRef(null);
   const lastTimeRef = useRef(Date.now());
   const lastFetchRef = useRef(0);
@@ -164,13 +169,10 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
       newPlc.inputs.sensor_2 = s2Triggered;
 
       // Evaluate all rungs
-//       console.log('Evaluating PLC rungs...');
       for (const rung of newPlc.rungs || []) {
         const hold = evalExpr(rung.expr, newPlc);
-//         console.log(`Rung ${rung.id} (${rung.description}): ${hold ? 'TRUE' : 'FALSE'}`);
         if (hold) {
           applyActions(rung.actions || [], newPlc);
-//           console.log(`Applied actions for rung ${rung.id}`);
         }
       }
 
@@ -178,9 +180,6 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
       if (!newPlc.outputs?.motor_on && newPlc.flags?.start_sealed) {
         newPlc.flags.start_sealed = false;
       }
-
-      // Debug: Check motor state
-//       console.log('Motor state:', newPlc.outputs?.motor_on ? 'ON' : 'OFF');
 
       // Update PLC state
       setPlc(newPlc);
@@ -208,13 +207,11 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
     if (!newPlc.inputs) newPlc.inputs = {};
     newPlc.inputs.start = true;
     newPlc.inputs.stop = true;
-//     console.log('Updated PLC inputs:', newPlc.inputs);
     setPlc(newPlc);
     setLog(l => [`Start pressed @ ${new Date().toLocaleTimeString()}`, ...l].slice(0, 50));
   };
 
   const toggleStop = () => {
-//     console.log('Stop button clicked');
     const newPlc = deepClone(plc);
     if (!newPlc.inputs) newPlc.inputs = {};
     newPlc.inputs.stop = false;
@@ -267,7 +264,6 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
         saveData.plc_logic = plc;
       }
 
-//       console.log('Saving to backend:', saveData);
       await axios.patch(`${apiBase}conveyor-belts/${beltId}/`, saveData);
       setLog(l => [`Config saved to backend @ ${new Date().toLocaleTimeString()}`, ...l].slice(0, 50));
 
@@ -334,58 +330,518 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
               {motorStatus}
             </span>
           </h3>
-          <div style={{ fontSize: '11px', color: '#BDBDBD' }}>
-            Style: {style.id ? 'Backend' : 'Local'}
-          </div>
-        </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ fontSize: '11px', color: '#BDBDBD' }}>
+              Style: {style.id ? 'Backend' : 'Local'}
+            </div>
 
-        {/* Camera Preview */}
-        <div style={{
-          marginBottom: '20px',
-          position: 'relative',
-          display: 'inline-block'
-        }}>
-          <div style={{ position: 'relative' }}>
-            <video
-              src={cameraUrl || 'http://localhost:8000/media/3.mp4'}
-              autoPlay
-              loop
-              muted
-              width={250}
-              style={{
-                border: '2px solid #455A64',
-                borderRadius: '8px',
-                boxShadow: '0 4px 8px rgba(0,0,0,0.3)'
-              }}
-            />
+            {/* Camera Toggle Button */}
             <button
-              onClick={() => setShowVideoModal(true)}
+              onClick={() => setShowVideoSection(!showVideoSection)}
               style={{
-                position: 'absolute',
-                bottom: '10px',
-                right: '10px',
-                background: 'rgba(0, 128, 255, 0.8)',
+                background: showVideoSection ? '#455A64' : '#37474F',
+                color: 'white',
                 border: 'none',
-                borderRadius: '50%',
-                width: '40px',
-                height: '40px',
+                padding: '8px 15px',
+                borderRadius: '6px',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                color: 'white',
-                fontSize: '20px',
+                gap: '8px',
+                fontSize: '14px',
+                transition: 'all 0.2s',
                 boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
               }}
-              title="Expand camera view"
+              onMouseOver={(e) => e.target.style.background = showVideoSection ? '#37474F' : '#455A64'}
+              onMouseOut={(e) => e.target.style.background = showVideoSection ? '#455A64' : '#37474F'}
+              title={showVideoSection ? "Hide Camera Feeds" : "Show Camera Feeds"}
             >
-              🔍
+              {showVideoSection ? (
+                <>
+                  <span style={{ fontSize: '16px' }}>👁️</span>
+                  Hide Camera
+                </>
+              ) : (
+                <>
+                  <span style={{ fontSize: '16px' }}>📹</span>
+                  Show Camera
+                </>
+              )}
             </button>
           </div>
-          <div style={{ fontSize: '12px', color: '#666', marginTop: '5px' }}>
-            Camera: {style.camera_x}, {style.camera_y}
-          </div>
         </div>
+
+        {/* Video Cards Section - Hidden by default */}
+        {showVideoSection && (
+          <div style={{
+            marginBottom: '20px',
+            animation: 'slideIn 0.3s ease-out'
+          }}>
+            {/* Video Cards Container */}
+            <div style={{
+              marginBottom: '20px',
+              display: 'flex',
+              gap: '20px',
+              flexWrap: 'wrap'
+            }}>
+              {/* Original Camera Feed Card */}
+              <div style={{
+                position: 'relative',
+                display: 'inline-block',
+                flex: showProcessedFeed ? '1' : '1',
+                minWidth: showProcessedFeed ? '250px' : '300px'
+              }}>
+                <div style={{
+                  background: '#37474F',
+                  padding: '15px',
+                  borderRadius: '10px',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                  height: '100%'
+                }}>
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '10px'
+                  }}>
+                    <h4 style={{ margin: 0, color: 'white', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{
+                        width: '10px',
+                        height: '10px',
+                        backgroundColor: '#0080FF',
+                        borderRadius: '50%',
+                        display: 'inline-block'
+                      }}></span>
+                      Original Feed
+                    </h4>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px'
+                    }}>
+                      {/* Toggle Processed Feed Button */}
+                      <button
+                        onClick={() => setShowProcessedFeed(!showProcessedFeed)}
+                        style={{
+                          background: showProcessedFeed ? '#4CAF50' : '#666',
+                          color: 'white',
+                          border: 'none',
+                          padding: '6px 12px',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          fontSize: '12px',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseOver={(e) => e.target.style.opacity = '0.9'}
+                        onMouseOut={(e) => e.target.style.opacity = '1'}
+                        title={showProcessedFeed ? "Hide AI Processing" : "Show AI Processing"}
+                      >
+                        {showProcessedFeed ? (
+                          <>
+                            <span>🔬</span>
+                            Hide AI
+                          </>
+                        ) : (
+                          <>
+                            <span>⚡</span>
+                            Show AI
+                          </>
+                        )}
+                      </button>
+
+                      <div style={{
+                        fontSize: '11px',
+                        color: '#BDBDBD',
+                        backgroundColor: 'rgba(0,0,0,0.3)',
+                        padding: '3px 8px',
+                        borderRadius: '4px'
+                      }}>
+                        Camera 1
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ position: 'relative' }}>
+                    <video
+                      src={cameraUrl || 'http://localhost:8000/media/3.mp4'}
+                      autoPlay
+                      loop
+                      muted
+                      width="100%"
+                      style={{
+                        border: '2px solid #455A64',
+                        borderRadius: '8px',
+                        backgroundColor: '#000',
+                        display: 'block',
+                        height: showProcessedFeed ? '180px' : '220px',
+                        objectFit: 'cover'
+                      }}
+                    />
+                    <button
+                      onClick={() => setShowVideoModal(true)}
+                      style={{
+                        position: 'absolute',
+                        bottom: '10px',
+                        right: '10px',
+                        background: 'rgba(0, 128, 255, 0.9)',
+                        border: 'none',
+                        borderRadius: '50%',
+                        width: '36px',
+                        height: '36px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'white',
+                        fontSize: '18px',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseOver={(e) => e.target.style.transform = 'scale(1.1)'}
+                      onMouseOut={(e) => e.target.style.transform = 'scale(1)'}
+                      title="Expand camera view"
+                    >
+                      🔍
+                    </button>
+                  </div>
+
+                  <div style={{
+                    marginTop: '10px',
+                    fontSize: '11px',
+                    color: '#BDBDBD',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}>
+                    <div>
+                      <div>Position: {style.camera_x}, {style.camera_y}</div>
+                      <div>Status: <span style={{ color: '#4CAF50' }}>● Live</span></div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div>1920×1080</div>
+                      <div>30 FPS</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Processed Feed Card - Hidden by default */}
+              {showProcessedFeed && (
+                <div style={{
+                  position: 'relative',
+                  display: 'inline-block',
+                  flex: '1',
+                  minWidth: '250px',
+                  animation: 'slideIn 0.3s ease-out'
+                }}>
+                  <div style={{
+                    background: '#37474F',
+                    padding: '15px',
+                    borderRadius: '10px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                    border: '1px solid #4CAF50',
+                    height: '100%'
+                  }}>
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: '10px'
+                    }}>
+                      <h4 style={{ margin: 0, color: 'white', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{
+                          width: '10px',
+                          height: '10px',
+                          backgroundColor: '#4CAF50',
+                          borderRadius: '50%',
+                          display: 'inline-block'
+                        }}></span>
+                        AI Processed Feed
+                      </h4>
+                      <div style={{
+                        fontSize: '11px',
+                        color: '#4CAF50',
+                        backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '5px'
+                      }}>
+                        <span style={{ fontSize: '12px', animation: 'pulse 1.5s infinite' }}>⚡</span>
+                        LIVE AI
+                      </div>
+                    </div>
+
+                    <div style={{ position: 'relative' }}>
+                      {/* You can replace this with your processed video */}
+                      <video
+                        src={cameraUrl || 'http://localhost:8000/media/3.mp4'} // Use processed video URL here
+                        autoPlay
+                        loop
+                        muted
+                        width="100%"
+                        style={{
+                          border: '2px solid #4CAF50',
+                          borderRadius: '8px',
+                          backgroundColor: '#000',
+                          display: 'block',
+                          height: '180px',
+                          objectFit: 'cover',
+                          filter: 'grayscale(50%) contrast(120%)' // Example processing effect
+                        }}
+                      />
+                      <div style={{
+                        position: 'absolute',
+                        top: '10px',
+                        left: '10px',
+                        background: 'rgba(0,0,0,0.7)',
+                        color: 'white',
+                        padding: '4px 8px',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        backdropFilter: 'blur(4px)'
+                      }}>
+                        <span style={{ color: '#FF9800' }}>⚡</span>
+                        Edge Detection
+                      </div>
+
+                      {/* Confidence Badge */}
+                      <div style={{
+                        position: 'absolute',
+                        top: '10px',
+                        right: '10px',
+                        background: 'rgba(0,0,0,0.7)',
+                        color: 'white',
+                        padding: '4px 8px',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        backdropFilter: 'blur(4px)',
+                        textAlign: 'center'
+                      }}>
+                        <div style={{ color: '#4CAF50', fontWeight: 'bold' }}>92%</div>
+                        <div style={{ fontSize: '9px', color: '#BDBDBD' }}>Confidence</div>
+                      </div>
+
+                      <button
+                        onClick={() => setShowVideoModal(true)}
+                        style={{
+                          position: 'absolute',
+                          bottom: '10px',
+                          right: '10px',
+                          background: 'rgba(76, 175, 80, 0.9)',
+                          border: 'none',
+                          borderRadius: '50%',
+                          width: '36px',
+                          height: '36px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: 'white',
+                          fontSize: '18px',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseOver={(e) => e.target.style.transform = 'scale(1.1)'}
+                        onMouseOut={(e) => e.target.style.transform = 'scale(1)'}
+                        title="View processing details"
+                      >
+                        ⚙️
+                      </button>
+                    </div>
+
+                    <div style={{
+                      marginTop: '10px',
+                      fontSize: '11px',
+                      color: '#BDBDBD',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <div>
+                        <div>Processing: <span style={{ color: '#FF9800' }}>Edge Detection</span></div>
+                        <div>Objects: <span style={{ color: '#2196F3', fontWeight: 'bold' }}>3</span> detected</div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div>Latency: <span style={{ color: '#4CAF50' }}>45ms</span></div>
+                        <div>Accuracy: <span style={{ color: '#4CAF50' }}>94%</span></div>
+                      </div>
+                    </div>
+
+                    {/* Processing Stats */}
+                    <div style={{
+                      marginTop: '10px',
+                      display: 'flex',
+                      gap: '8px',
+                      fontSize: '10px'
+                    }}>
+                      <div style={{
+                        flex: 1,
+                        background: 'rgba(0,0,0,0.3)',
+                        padding: '6px 4px',
+                        borderRadius: '4px',
+                        textAlign: 'center',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '2px'
+                      }}>
+                        <div style={{ color: '#FF9800', fontSize: '9px' }}>PROCESSING</div>
+                        <div style={{ color: 'white', fontWeight: 'bold', fontSize: '12px' }}>30 FPS</div>
+                      </div>
+                      <div style={{
+                        flex: 1,
+                        background: 'rgba(0,0,0,0.3)',
+                        padding: '6px 4px',
+                        borderRadius: '4px',
+                        textAlign: 'center',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '2px'
+                      }}>
+                        <div style={{ color: '#2196F3', fontSize: '9px' }}>LATENCY</div>
+                        <div style={{ color: 'white', fontWeight: 'bold', fontSize: '12px' }}>45ms</div>
+                      </div>
+                      <div style={{
+                        flex: 1,
+                        background: 'rgba(0,0,0,0.3)',
+                        padding: '6px 4px',
+                        borderRadius: '4px',
+                        textAlign: 'center',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '2px'
+                      }}>
+                        <div style={{ color: '#4CAF50', fontSize: '9px' }}>ACCURACY</div>
+                        <div style={{ color: 'white', fontWeight: 'bold', fontSize: '12px' }}>94%</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Camera Controls */}
+            <div style={{
+              marginBottom: '20px',
+              display: 'flex',
+              gap: '10px',
+              flexWrap: 'wrap',
+              alignItems: 'center'
+            }}>
+              {/* Quick Actions */}
+              <div style={{
+                display: 'flex',
+                gap: '10px',
+                flex: 1,
+                minWidth: '300px'
+              }}>
+                <button
+                  onClick={() => setShowVideoModal(true)}
+                  style={{
+                    background: 'linear-gradient(135deg, #455A64, #37474F)',
+                    color: 'white',
+                    border: 'none',
+                    padding: '10px 20px',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    fontSize: '14px',
+                    transition: 'all 0.2s',
+                    flex: 1
+                  }}
+                  onMouseOver={(e) => e.target.style.background = 'linear-gradient(135deg, #37474F, #263238)'}
+                  onMouseOut={(e) => e.target.style.background = 'linear-gradient(135deg, #455A64, #37474F)'}
+                >
+                  <span style={{ fontSize: '18px' }}>📹</span>
+                  Expand View
+                </button>
+
+                <button
+                  onClick={() => setShowProcessedFeed(!showProcessedFeed)}
+                  style={{
+                    background: showProcessedFeed
+                      ? 'linear-gradient(135deg, #F44336, #D32F2F)'
+                      : 'linear-gradient(135deg, #4CAF50, #388E3C)',
+                    color: 'white',
+                    border: 'none',
+                    padding: '10px 20px',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    fontSize: '14px',
+                    transition: 'all 0.2s',
+                    flex: 1
+                  }}
+                  onMouseOver={(e) => e.target.style.opacity = '0.9'}
+                  onMouseOut={(e) => e.target.style.opacity = '1'}
+                >
+                  {showProcessedFeed ? (
+                    <>
+                      <span style={{ fontSize: '18px' }}>👁️</span>
+                      Hide AI Feed
+                    </>
+                  ) : (
+                    <>
+                      <span style={{ fontSize: '18px' }}>🔬</span>
+                      Show AI Feed
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <button
+                onClick={() => {
+                  // Add camera snapshot functionality
+                  const video = document.querySelector('video');
+                  if (video) {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(video, 0, 0);
+                    const link = document.createElement('a');
+                    link.download = `conveyor_snapshot_${Date.now()}.png`;
+                    link.href = canvas.toDataURL('image/png');
+                    link.click();
+                  }
+                }}
+                style={{
+                  background: 'linear-gradient(135deg, #2196F3, #1976D2)',
+                  color: 'white',
+                  border: 'none',
+                  padding: '10px 20px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: '14px',
+                  transition: 'all 0.2s',
+                  minWidth: '200px'
+                }}
+                onMouseOver={(e) => e.target.style.background = 'linear-gradient(135deg, #1976D2, #1565C0)'}
+                onMouseOut={(e) => e.target.style.background = 'linear-gradient(135deg, #2196F3, #1976D2)'}
+              >
+                <span style={{ fontSize: '18px' }}>📸</span>
+                Take Snapshot
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Components */}
         <ConveyorVisualization
@@ -421,25 +877,33 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
           onClearLog={onClearLog}
         />
 
-        {/* Debug Info */}
-        <div style={{
-          marginTop: '20px',
-          background: '#f0f0f0',
-          padding: '10px',
-          borderRadius: '4px',
-          fontSize: '12px'
-        }}>
-          <div><strong>Debug Info:</strong></div>
-          <div>Motor On: {plc.outputs?.motor_on?.toString()}</div>
-          <div>Start Button: {plc.inputs?.start?.toString()}</div>
-          <div>Stop Button: {plc.inputs?.stop?.toString()}</div>
-          <div>Fault Active: {plc.flags?.fault_active?.toString()}</div>
-          <div>Start Sealed: {plc.flags?.start_sealed?.toString()}</div>
-          <div>Emergency Stop: {plc.inputs?.emergency_stop?.toString()}</div>
-          <div>Safety Gate: {plc.inputs?.safety_gate?.toString()}</div>
-          <div>Belt Width: {style.belt_width}px</div>
-          <div>Belt Color: <span style={{ color: style.belt_color }}>■ {style.belt_color}</span></div>
-        </div>
+ 
+
+        {/* Add these CSS animations */}
+        <style>{`
+          @keyframes slideIn {
+            from {
+              opacity: 0;
+              transform: translateY(-10px);
+            }
+            to {
+              opacity: 1;
+              transform: translateY(0);
+            }
+          }
+
+          @keyframes pulse {
+            0% {
+              opacity: 1;
+            }
+            50% {
+              opacity: 0.7;
+            }
+            100% {
+              opacity: 1;
+            }
+          }
+        `}</style>
       </div>
     </div>
   );
