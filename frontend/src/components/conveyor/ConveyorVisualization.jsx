@@ -11,7 +11,10 @@ export default function ConveyorVisualization({
   onCameraClick
 }) {
   const motorStatus = plc?.outputs?.motor_on ? 'ON' : 'OFF';
-  const beltColor = motorStatus === 'ON' ? '#4CAF50' : (style?.belt_color || "#5a5a5a");
+  // Use the running/stopped color based on motor status
+  const beltColor = motorStatus === 'ON'
+    ? (style?.belt_running_color || '#4CAF50')
+    : (style?.belt_stopped_color || style?.belt_color || "#5a5a5a");
 
   return (
     <div style={{
@@ -68,7 +71,8 @@ export default function ConveyorVisualization({
           <g style={{ cursor: 'grab' }}>
             <rect x={(style?.sensor_x || 300) - 5} y={90} width={10} height={50}
               fill={style?.sensor_color || "yellow"} stroke="#333" />
-            <circle cx={style?.sensor_x || 300} cy={95} r="3" fill={plc?.inputs?.sensor_1 ? "red" : "#666"} />
+            <circle cx={style?.sensor_x || 300} cy={95} r="3"
+              fill={plc?.inputs?.sensor_1 ? (style?.sensor_led_color || "red") : "#666"} />
             <text x={style?.sensor_x || 300} y={145} textAnchor="middle" fontSize="10" fill="white">
               S1
             </text>
@@ -79,7 +83,8 @@ export default function ConveyorVisualization({
           <g style={{ cursor: 'grab' }}>
             <rect x={(style?.sensor_2_x || 600) - 5} y={90} width={10} height={50}
               fill={style?.sensor_2_color || "orange"} stroke="#333" />
-            <circle cx={style?.sensor_2_x || 600} cy={95} r="3" fill={plc?.inputs?.sensor_2 ? "red" : "#666"} />
+            <circle cx={style?.sensor_2_x || 600} cy={95} r="3"
+              fill={plc?.inputs?.sensor_2 ? (style?.sensor_led_color || "red") : "#666"} />
             <text x={style?.sensor_2_x || 600} y={145} textAnchor="middle" fontSize="10" fill="white">
               S2
             </text>
@@ -96,11 +101,13 @@ export default function ConveyorVisualization({
           Motor
         </text>
 
-        {/* Camera */}
+        {/* Camera - positioned according to style */}
         <g onClick={onCameraClick} style={{ cursor: 'pointer' }}>
           <rect x={style?.camera_x || 50} y={style?.camera_y || 10} width={30} height={20}
             fill={style?.camera_color || "#0080ff"} rx={4} />
           <circle cx={(style?.camera_x || 50) + 22} cy={(style?.camera_y || 10) + 10} r="4" fill="#000" />
+          <circle cx={(style?.camera_x || 50) + 22} cy={(style?.camera_y || 10) + 10} r="2"
+            fill={style?.camera_led_color || "#0080FF"} />
           <text x={style?.camera_x || 50} y={(style?.camera_y || 10) - 5} fontSize="10" fill={style?.camera_color || "#0080ff"}>
             Cam
           </text>
@@ -115,10 +122,12 @@ export default function ConveyorVisualization({
       `}</style>
 
       {/* Style Info */}
-      <div style={{ marginTop: '10px', fontSize: '11px', color: '#BDBDBD', display: 'flex', gap: '10px' }}>
+      <div style={{ marginTop: '10px', fontSize: '11px', color: '#BDBDBD', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
         <div>Belt: {style?.belt_length || 800}px × {style?.belt_width || 30}px</div>
-        <div>Color: <span style={{ color: style?.belt_color || "#5a5a5a" }}>■</span></div>
+        <div>Color: <span style={{ color: style?.belt_color || "#5a5a5a" }}>■ {style?.belt_color}</span></div>
         <div>Rollers: {style?.roller_count || 8}</div>
+        <div>Motor: <span style={{ color: style?.motor_color || "#222" }}>■</span></div>
+        <div>Camera: {style?.camera_x}, {style?.camera_y}</div>
       </div>
     </div>
   );

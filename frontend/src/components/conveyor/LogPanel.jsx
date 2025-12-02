@@ -11,7 +11,7 @@ export default function LogPanel({ log, onClearLog }) {
       overflow: 'auto'
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-        <h4 style={{ margin: 0 }}>Event Log</h4>
+        <h4 style={{ margin: 0,color:'black' }}>Event Log</h4>
         <button
           onClick={onClearLog}
           style={{
@@ -31,7 +31,7 @@ export default function LogPanel({ log, onClearLog }) {
         {log.map((entry, i) => (
           <div key={i} style={{
             padding: '4px 0',
-            borderBottom: i < log.length - 1 ? '1px solid #ddd' : 'none'
+            borderBottom: i < log.length - 1 ? '1px solid #ddd' : 'none', color:'black'
           }}>
             {entry}
           </div>

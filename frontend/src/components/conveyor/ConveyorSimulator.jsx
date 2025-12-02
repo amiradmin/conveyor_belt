@@ -6,7 +6,7 @@ import ConveyorVisualization from './ConveyorVisualization';
 import ControlPanel from './ControlPanel';
 import StatusPanel from './StatusPanel';
 import LogPanel from './LogPanel';
-import { deepClone, evalExpr, applyActions, defaultPLC, defaultStyle } from './PLCUtils';
+import { deepClone, evalExpr, applyActions, defaultPLC, defaultStyle, normalizeStyle } from './PLCUtils';
 
 export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localhost:8000/api/camera/' }) {
   const [belt, setBelt] = useState(null);
@@ -23,6 +23,34 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
   const lastTimeRef = useRef(Date.now());
   const lastFetchRef = useRef(0);
 
+  // Initialize PLC with proper structure to avoid undefined errors
+  const initializePLC = (backendPLC) => {
+    if (!backendPLC) return defaultPLC;
+
+    // Ensure all properties exist
+    return {
+      ...defaultPLC,
+      ...backendPLC,
+      inputs: {
+        ...defaultPLC.inputs,
+        ...(backendPLC.inputs || {})
+      },
+      outputs: {
+        ...defaultPLC.outputs,
+        ...(backendPLC.outputs || {})
+      },
+      counters: {
+        ...defaultPLC.counters,
+        ...(backendPLC.counters || {})
+      },
+      flags: {
+        ...defaultPLC.flags,
+        ...(backendPLC.flags || {})
+      },
+      rungs: backendPLC.rungs || defaultPLC.rungs
+    };
+  };
+
   // Function to fetch data from backend
   const fetchBeltData = async () => {
     try {
@@ -33,31 +61,21 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
 
       setBelt(data);
 
-      // Always use backend style data
+      // Always use backend style data with normalization
       if (data.style) {
-        console.log('Setting style from backend:', data.style);
-        setStyle(data.style);
+        console.log('Setting style from backend (normalized):', data.style);
+        const normalizedStyle = normalizeStyle(data.style);
+        console.log('Normalized style:', normalizedStyle);
+        setStyle(normalizedStyle);
       } else {
         // Only use defaults if backend has no style
         setStyle(defaultStyle);
       }
 
-      // Always use backend PLC data
-      if (data.plc_logic) {
-        console.log('Setting PLC from backend:', data.plc_logic);
-        // Ensure PLC has all required properties
-        const mergedPLC = {
-          ...defaultPLC,
-          ...data.plc_logic,
-          inputs: { ...defaultPLC.inputs, ...data.plc_logic.inputs },
-          outputs: { ...defaultPLC.outputs, ...data.plc_logic.outputs },
-          counters: { ...defaultPLC.counters, ...data.plc_logic.counters },
-          flags: { ...defaultPLC.flags, ...data.plc_logic.flags }
-        };
-        setPlc(mergedPLC);
-      } else {
-        setPlc(defaultPLC);
-      }
+      // Always use backend PLC data with proper initialization
+      const initializedPLC = initializePLC(data.plc_logic);
+      console.log('Setting PLC (initialized):', initializedPLC);
+      setPlc(initializedPLC);
 
       // Reset objects to starting positions
       setObjects([
@@ -130,10 +148,12 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
         if (!o.triggered_s1 && o.x >= sensorX - 5 && o.x <= sensorX + 5) {
           s1Triggered = true;
           o.triggered_s1 = true;
+          console.log(`Object ${o.id} triggered sensor 1 at x=${o.x.toFixed(1)}`);
         }
         if (!o.triggered_s2 && o.x >= sensor2X - 5 && o.x <= sensor2X + 5) {
           s2Triggered = true;
           o.triggered_s2 = true;
+          console.log(`Object ${o.id} triggered sensor 2 at x=${o.x.toFixed(1)}`);
         }
         return o;
       }));
@@ -147,10 +167,13 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
       newPlc.inputs.sensor_2 = s2Triggered;
 
       // Evaluate all rungs
+      console.log('Evaluating PLC rungs...');
       for (const rung of newPlc.rungs || []) {
         const hold = evalExpr(rung.expr, newPlc);
+        console.log(`Rung ${rung.id} (${rung.description}): ${hold ? 'TRUE' : 'FALSE'}`);
         if (hold) {
           applyActions(rung.actions || [], newPlc);
+          console.log(`Applied actions for rung ${rung.id}`);
         }
       }
 
@@ -158,6 +181,9 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
       if (!newPlc.outputs?.motor_on && newPlc.flags?.start_sealed) {
         newPlc.flags.start_sealed = false;
       }
+
+      // Debug: Check motor state
+      console.log('Motor state:', newPlc.outputs?.motor_on ? 'ON' : 'OFF');
 
       // Update PLC state
       setPlc(newPlc);
@@ -180,15 +206,18 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
 
   // Control functions
   const toggleStart = () => {
+    console.log('Start button clicked');
     const newPlc = deepClone(plc);
     if (!newPlc.inputs) newPlc.inputs = {};
     newPlc.inputs.start = true;
     newPlc.inputs.stop = true;
+    console.log('Updated PLC inputs:', newPlc.inputs);
     setPlc(newPlc);
     setLog(l => [`Start pressed @ ${new Date().toLocaleTimeString()}`, ...l].slice(0, 50));
   };
 
   const toggleStop = () => {
+    console.log('Stop button clicked');
     const newPlc = deepClone(plc);
     if (!newPlc.inputs) newPlc.inputs = {};
     newPlc.inputs.stop = false;
@@ -232,6 +261,7 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
 
       // Only save style if it has values
       if (style) {
+        // Save all style properties including new ones
         saveData.style = style;
       }
 
@@ -307,6 +337,9 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
               {motorStatus}
             </span>
           </h3>
+          <div style={{ fontSize: '11px', color: '#BDBDBD' }}>
+            Style: {style.id ? 'Backend' : 'Local'}
+          </div>
         </div>
 
         {/* Camera Preview */}
@@ -352,6 +385,9 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
               🔍
             </button>
           </div>
+          <div style={{ fontSize: '12px', color: '#666', marginTop: '5px' }}>
+            Camera: {style.camera_x}, {style.camera_y}
+          </div>
         </div>
 
         {/* Components */}
@@ -387,6 +423,26 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
           log={log}
           onClearLog={onClearLog}
         />
+
+        {/* Debug Info */}
+        <div style={{
+          marginTop: '20px',
+          background: '#f0f0f0',
+          padding: '10px',
+          borderRadius: '4px',
+          fontSize: '12px'
+        }}>
+          <div><strong>Debug Info:</strong></div>
+          <div>Motor On: {plc.outputs?.motor_on?.toString()}</div>
+          <div>Start Button: {plc.inputs?.start?.toString()}</div>
+          <div>Stop Button: {plc.inputs?.stop?.toString()}</div>
+          <div>Fault Active: {plc.flags?.fault_active?.toString()}</div>
+          <div>Start Sealed: {plc.flags?.start_sealed?.toString()}</div>
+          <div>Emergency Stop: {plc.inputs?.emergency_stop?.toString()}</div>
+          <div>Safety Gate: {plc.inputs?.safety_gate?.toString()}</div>
+          <div>Belt Width: {style.belt_width}px</div>
+          <div>Belt Color: <span style={{ color: style.belt_color }}>■ {style.belt_color}</span></div>
+        </div>
       </div>
     </div>
   );
