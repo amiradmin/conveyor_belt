@@ -1,117 +1,106 @@
-// src/components/ConveyorSimulator.jsx
+// src/components/conveyor/ConveyorSimulator.jsx
 import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
-import { DraggableCore } from 'react-draggable';
+import VideoModal from './VideoModal';
+import ConveyorVisualization from './ConveyorVisualization';
+import ControlPanel from './ControlPanel';
+import StatusPanel from './StatusPanel';
+import LogPanel from './LogPanel';
+import { deepClone, evalExpr, applyActions, defaultPLC, defaultStyle } from './PLCUtils';
 
-/*
-Props:
-  beltId (number) - conveyor belt id in backend
-  apiBase (string) - base url, e.g. "http://localhost:8000/api/camera/"
-*/
-
-function deepClone(obj) {
-  return JSON.parse(JSON.stringify(obj));
-}
-
-// --- PLC helpers ---
-function evalExpr(expr, context) {
-  try {
-    const tokenized = expr.replace(/\b[A-Za-z_][A-Za-z0-9_.]*\b/g, (name) => {
-      const parts = name.split('.');
-      let v = context;
-      for (let p of parts) {
-        if (v && p in v) v = v[p];
-        else return 'false';
-      }
-      if (typeof v === 'boolean') return v ? 'true' : 'false';
-      if (typeof v === 'number') return String(v);
-      return JSON.stringify(v);
-    });
-    const fn = new Function(`return (${tokenized});`);
-    return !!fn();
-  } catch (e) {
-    console.warn('expr eval error', expr, e);
-    return false;
-  }
-}
-
-function applyActions(actions, ctx) {
-  const outputsChanged = {};
-  for (const a of actions || []) {
-    if (a.type === 'set_output') {
-      ctx.outputs[a.name] = !!a.value;
-      outputsChanged[a.name] = ctx.outputs[a.name];
-    } else if (a.type === 'inc_counter') {
-      const c = ctx.counters[a.name];
-      if (c) c.acc = (c.acc || 0) + 1;
-    } else if (a.type === 'reset_counter') {
-      const c = ctx.counters[a.name];
-      if (c) c.acc = 0;
-    } else if (a.type === 'pulse_output') {
-      ctx.outputs[a.name] = true;
-      setTimeout(() => {
-        ctx.outputs[a.name] = false;
-      }, a.ms || 300);
-    }
-  }
-  return outputsChanged;
-}
-
-// --- React Component ---
 export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localhost:8000/api/camera/' }) {
   const [belt, setBelt] = useState(null);
   const [style, setStyle] = useState(null);
   const [plc, setPlc] = useState(null);
+  const [objects, setObjects] = useState([]);
+  const [offset, setOffset] = useState(0);
+  const [log, setLog] = useState([]);
+  const [cameraUrl, setCameraUrl] = useState(null);
+  const [showVideoModal, setShowVideoModal] = useState(false);
+  const [currentSpeed, setCurrentSpeed] = useState(1);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const rafRef = useRef(null);
   const lastTimeRef = useRef(Date.now());
-  const [offset, setOffset] = useState(0);
-  const [objects, setObjects] = useState([]);
-  const svgRef = useRef(null);
-  const [running, setRunning] = useState(false);
-  const [log, setLog] = useState([]);
-  const [sensorX, setSensorX] = useState(500);
-  const sensorRef = useRef(null);
+  const lastFetchRef = useRef(0);
 
-  // --- Fetch belt from backend ---
-  useEffect(() => {
-    async function fetchBelt() {
-      try {
-        const res = await axios.get(`${apiBase}conveyor-belts/${beltId}/`);
-        const data = res.data;
+  // Function to fetch data from backend
+  const fetchBeltData = async () => {
+    try {
+      console.log('Fetching belt data from backend...');
+      const res = await axios.get(`${apiBase}conveyor-belts/${beltId}/`);
+      const data = res.data;
+      console.log('Backend response:', data);
 
-        setBelt(data);
-        setStyle(data.style || {
-          belt_color: 'url(#beltPattern)',
-          belt_width: 40,
-          roller_count: 6,
-          roller_color: '#555',
-          belt_length: 500,
-          object_color: 'steelblue',
-          sensor_color: 'yellow',
-          motor_color: '#777',
-        });
+      setBelt(data);
 
-        setPlc({
-          inputs: data.plc_logic?.inputs || { start: false, stop: false, sensor_1: false },
-          outputs: data.plc_logic?.outputs || { motor_on: false },
-          timers: data.plc_logic?.timers || {},
-          counters: data.plc_logic?.counters || {},
-          rungs: data.plc_logic?.rungs || [], // safe default
-        });
-
-        setObjects([{ id: 1, x: 120 }, { id: 2, x: 240 }, { id: 3, x: 360 }]);
-        sensorRef.current = data.style?.sensor_x || 500;
-        setSensorX(sensorRef.current);
-      } catch (e) {
-        console.error('fetch belt', e);
+      // Always use backend style data
+      if (data.style) {
+        console.log('Setting style from backend:', data.style);
+        setStyle(data.style);
+      } else {
+        // Only use defaults if backend has no style
+        setStyle(defaultStyle);
       }
-    }
-    fetchBelt();
-  }, [beltId, apiBase]);
 
-  // --- Tick: PLC + animation ---
+      // Always use backend PLC data
+      if (data.plc_logic) {
+        console.log('Setting PLC from backend:', data.plc_logic);
+        // Ensure PLC has all required properties
+        const mergedPLC = {
+          ...defaultPLC,
+          ...data.plc_logic,
+          inputs: { ...defaultPLC.inputs, ...data.plc_logic.inputs },
+          outputs: { ...defaultPLC.outputs, ...data.plc_logic.outputs },
+          counters: { ...defaultPLC.counters, ...data.plc_logic.counters },
+          flags: { ...defaultPLC.flags, ...data.plc_logic.flags }
+        };
+        setPlc(mergedPLC);
+      } else {
+        setPlc(defaultPLC);
+      }
+
+      // Reset objects to starting positions
+      setObjects([
+        { id: 1, x: 100, triggered_s1: false, triggered_s2: false },
+        { id: 2, x: 250, triggered_s1: false, triggered_s2: false },
+        { id: 3, x: 400, triggered_s1: false, triggered_s2: false }
+      ]);
+
+      if (data.video_url) setCameraUrl(data.video_url);
+      if (data.current_speed) setCurrentSpeed(data.current_speed);
+
+      lastFetchRef.current = Date.now();
+      setLog(l => [`Data fetched from backend @ ${new Date().toLocaleTimeString()}`, ...l].slice(0, 50));
+
+    } catch (e) {
+      console.error('Error fetching belt data:', e);
+      setLog(l => [`Error fetching data: ${e.message}`, ...l].slice(0, 50));
+    }
+  };
+
+  // Initial fetch and auto-refresh
   useEffect(() => {
-    if (!plc) return;
+    fetchBeltData();
+
+    // Set up auto-refresh every 5 seconds
+    const intervalId = setInterval(() => {
+      fetchBeltData();
+    }, 5000);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [beltId, apiBase, refreshTrigger]);
+
+  // Manually trigger refresh
+  const refreshFromBackend = () => {
+    setRefreshTrigger(prev => prev + 1);
+    setLog(l => [`Manual refresh triggered @ ${new Date().toLocaleTimeString()}`, ...l].slice(0, 50));
+  };
+
+  // Tick: animation + PLC evaluation
+  useEffect(() => {
+    if (!plc || !style) return;
     let runningFlag = true;
 
     function tick() {
@@ -120,65 +109,62 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
       const dt = now - lastTimeRef.current;
       lastTimeRef.current = now;
 
-      const motorOn = !!(plc.outputs?.motor_on);
-      const speed = belt?.current_speed || 1.0;
-      const pxPerSec = 40 * speed;
+      const motorOn = !!plc.outputs?.motor_on;
+      const pxPerSec = currentSpeed * 40;
 
-      if (motorOn && running) {
-        setOffset((o) => (o + (pxPerSec * (dt / 1000))) % 80);
-        setObjects((prev) => prev.map((obj) => ({ ...obj, x: obj.x + (pxPerSec * (dt / 1000)) })));
+      // Move objects if motor is on
+      if (motorOn) {
+        setOffset(o => (o + pxPerSec * dt / 1000) % 80);
+        setObjects(prev => prev.map(o => ({
+          ...o,
+          x: o.x + pxPerSec * dt / 1000
+        })));
       }
 
-      const sensorPos = sensorRef.current;
-      let sensorTriggered = false;
-      setObjects((prev) =>
-        prev.map((o) => {
-          if (!o.triggered && o.x >= sensorPos - 5 && o.x <= sensorPos + 5) {
-            sensorTriggered = true;
-            o.triggered = true;
-          }
-          return o;
-        })
-      );
+      // Sensor detection
+      let s1Triggered = false, s2Triggered = false;
+      setObjects(prev => prev.map(o => {
+        const sensorX = style.sensor_x || 300;
+        const sensor2X = style.sensor_2_x || 600;
 
-      if (!plc.inputs) plc.inputs = {};
-      plc.inputs.sensor_1 = sensorTriggered;
-
-      Object.entries(plc.timers || {}).forEach(([k, t]) => {
-        if (t.type === 'TON') {
-          if (t.running) {
-            t.acc_ms = (t.acc_ms || 0) + dt;
-            t.done = t.acc_ms >= (t.preset_ms || 0);
-          } else {
-            t.acc_ms = 0;
-            t.done = false;
-          }
+        if (!o.triggered_s1 && o.x >= sensorX - 5 && o.x <= sensorX + 5) {
+          s1Triggered = true;
+          o.triggered_s1 = true;
         }
-      });
+        if (!o.triggered_s2 && o.x >= sensor2X - 5 && o.x <= sensor2X + 5) {
+          s2Triggered = true;
+          o.triggered_s2 = true;
+        }
+        return o;
+      }));
 
-      const ctx = { inputs: plc.inputs, timers: plc.timers, counters: plc.counters, outputs: plc.outputs };
+      // Update PLC inputs with sensor states
+      const newPlc = deepClone(plc);
 
-      if (Array.isArray(plc.rungs)) {
-        for (const rung of plc.rungs) {
-          if (evalExpr(rung.expr, ctx)) applyActions(rung.actions, ctx);
+      // Ensure inputs object exists
+      if (!newPlc.inputs) newPlc.inputs = {};
+      newPlc.inputs.sensor_1 = s1Triggered;
+      newPlc.inputs.sensor_2 = s2Triggered;
+
+      // Evaluate all rungs
+      for (const rung of newPlc.rungs || []) {
+        const hold = evalExpr(rung.expr, newPlc);
+        if (hold) {
+          applyActions(rung.actions || [], newPlc);
         }
       }
 
-      setPlc({ ...plc, inputs: ctx.inputs, timers: ctx.timers, counters: ctx.counters, outputs: ctx.outputs });
+      // Clear start seal if motor is off
+      if (!newPlc.outputs?.motor_on && newPlc.flags?.start_sealed) {
+        newPlc.flags.start_sealed = false;
+      }
 
-      // Remove objects past end
-      setObjects((prev) => prev.filter((o) => o.x < 580));
+      // Update PLC state
+      setPlc(newPlc);
 
-      // Auto-add objects if needed
-      const desired = style?.initial_objects || 3;
-      setObjects((prev) => {
-        if (prev.length < desired) {
-          const lastX = prev.length ? Math.max(...prev.map((p) => p.x)) : 80;
-          const newId = Date.now();
-          return [...prev, { id: newId, x: lastX - 120 }];
-        }
-        return prev;
-      });
+      // Remove objects that have moved off the belt
+      const beltLength = style.belt_length || 800;
+      setObjects(prev => prev.filter(o => o.x < beltLength + 50));
 
       rafRef.current = requestAnimationFrame(tick);
     }
@@ -190,170 +176,216 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
       runningFlag = false;
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [plc, running, belt, style]);
+  }, [plc, style, currentSpeed]);
 
-  // --- Controls ---
+  // Control functions
   const toggleStart = () => {
-    if (!plc) return;
     const newPlc = deepClone(plc);
+    if (!newPlc.inputs) newPlc.inputs = {};
     newPlc.inputs.start = true;
-    newPlc.inputs.stop = false;
-    setPlc(newPlc);
-    setRunning(true);
-    setLog((l) => [`Start pressed @ ${new Date().toLocaleTimeString()}`, ...l].slice(0, 50));
-  };
-  const toggleStop = () => {
-    if (!plc) return;
-    const newPlc = deepClone(plc);
     newPlc.inputs.stop = true;
+    setPlc(newPlc);
+    setLog(l => [`Start pressed @ ${new Date().toLocaleTimeString()}`, ...l].slice(0, 50));
+  };
+
+  const toggleStop = () => {
+    const newPlc = deepClone(plc);
+    if (!newPlc.inputs) newPlc.inputs = {};
+    newPlc.inputs.stop = false;
     newPlc.inputs.start = false;
     setPlc(newPlc);
-    setRunning(false);
-    setLog((l) => [`Stop pressed @ ${new Date().toLocaleTimeString()}`, ...l].slice(0, 50));
+    setLog(l => [`Stop pressed @ ${new Date().toLocaleTimeString()}`, ...l].slice(0, 50));
+  };
+
+  const emergencyStop = () => {
+    const newPlc = deepClone(plc);
+    if (!newPlc.inputs) newPlc.inputs = {};
+    newPlc.inputs.emergency_stop = false;
+    setPlc(newPlc);
+    setLog(l => [`EMERGENCY STOP @ ${new Date().toLocaleTimeString()}`, ...l].slice(0, 50));
+  };
+
+  const resetObjects = () => {
+    setObjects([
+      { id: 1, x: 100, triggered_s1: false, triggered_s2: false },
+      { id: 2, x: 250, triggered_s1: false, triggered_s2: false },
+      { id: 3, x: 400, triggered_s1: false, triggered_s2: false }
+    ]);
+    const newPlc = deepClone(plc);
+    if (newPlc.outputs) newPlc.outputs.count_signal = 0;
+    if (newPlc.counters) {
+      newPlc.counters.object_counter = 0;
+      newPlc.counters.today_parts = 0;
+    }
+    if (newPlc.flags) {
+      newPlc.flags.fault_active = false;
+    }
+    if (newPlc.outputs) newPlc.outputs.alarm = false;
+    setPlc(newPlc);
+    setLog(l => [`Objects and counters reset @ ${new Date().toLocaleTimeString()}`, ...l].slice(0, 50));
   };
 
   const saveConfig = async () => {
     try {
-      const payload = { style, plc_logic: plc };
-      await axios.patch(`${apiBase}conveyor-belts/${beltId}/`, payload);
-      setLog((l) => [`Saved config @ ${new Date().toLocaleTimeString()}`, ...l].slice(0, 50));
+      // Create clean save object
+      const saveData = {};
+
+      // Only save style if it has values
+      if (style) {
+        saveData.style = style;
+      }
+
+      // Only save PLC if it has values
+      if (plc) {
+        saveData.plc_logic = plc;
+      }
+
+      console.log('Saving to backend:', saveData);
+      await axios.patch(`${apiBase}conveyor-belts/${beltId}/`, saveData);
+      setLog(l => [`Config saved to backend @ ${new Date().toLocaleTimeString()}`, ...l].slice(0, 50));
+
+      // Refresh from backend after save to ensure consistency
+      setTimeout(() => {
+        fetchBeltData();
+      }, 500);
+
     } catch (e) {
-      console.error('save error', e);
-      setLog((l) => [`Save error ${e}`, ...l].slice(0, 50));
+      console.error('Save error:', e);
+      setLog(l => [`Save error: ${e.message}`, ...l].slice(0, 50));
     }
   };
 
-  const onSensorDrag = (e, data) => {
-    const x = sensorX + data.deltaX;
-    const absX = Math.max(60, Math.min(560, x));
-    setSensorX(absX);
-    sensorRef.current = absX;
-    setStyle((s) => ({ ...s, sensor_x: absX }));
+  const onSensorDrag = (sensor, data) => {
+    const newX = Math.max(50, Math.min((style?.belt_length || 800) - 10,
+      (sensor === 's1' ? (style?.sensor_x || 300) : (style?.sensor_2_x || 600)) + data.deltaX));
+
+    const updatedStyle = { ...style };
+    if (sensor === 's1') {
+      updatedStyle.sensor_x = newX;
+    } else {
+      updatedStyle.sensor_2_x = newX;
+    }
+    setStyle(updatedStyle);
   };
 
-  if (!belt || !plc || !style) return <div>Loading simulator...</div>;
+  const onClearLog = () => {
+    setLog([]);
+  };
 
-  const outputs = plc.outputs || {};
+  const motorStatus = plc?.outputs?.motor_on ? 'ON' : 'OFF';
+
+  if (!belt || !plc || !style) return <div>Loading conveyor simulator...</div>;
 
   return (
-    <div style={{ display: 'flex', gap: 20 }}>
-      <div>
-        <h3>{belt.name} (Simulator)</h3>
-       <svg width={1000} height={200} style={{ border: '1px solid #ddd', background: '#fafafa' }}>
-  {/* Belt surface */}
-  <rect
-    x={60}
-    y={100}  // belt y-position
-    width={style.belt_length}
-    height={style.belt_width}
-    fill={style.belt_color || '#5a5a5a'}
-    rx={6}
-    stroke="#333"
-  />
-
-  {/* Rollers underneath the belt */}
-  {Array.from({ length: style.roller_count }).map((_, i) => {
-    const cx = 60 + i * (style.belt_length / (style.roller_count - 1));
-    const cy = 100 + style.belt_width + 10; // below belt
-    return (
-      <circle
-        key={i}
-        cx={cx}
-        cy={cy}
-        r={10}
-        fill={style.roller_color || '#444'}
-        stroke="#222"
+    <div style={{ display: 'flex', gap: 20, padding: '20px', fontFamily: 'Arial, sans-serif' }}>
+      <VideoModal
+        isOpen={showVideoModal}
+        onClose={() => setShowVideoModal(false)}
+        videoUrl={cameraUrl || 'http://localhost:8000/media/3.mp4'}
       />
-    );
-  })}
 
-  {/* Objects (ore pieces) on top of the belt */}
-  {objects.map((o) => (
-    <rect
-      key={o.id}
-      x={o.x}
-      y={100 - 20} // object sits above belt
-      width={24}
-      height={24}
-      rx={4}
-      fill={style.object_color || '#8b4513'}
-      stroke="#222"
-    />
-  ))}
-
-  {/* Sensor vertical */}
-  <DraggableCore
-    axis="x"
-    bounds={{ left: 60, right: 60 + style.belt_length - 10 }}
-    onDrag={onSensorDrag}
-  >
-    <rect
-      ref={sensorRef}
-      x={sensorX - 5}
-      y={80} // slightly above belt
-      width={10}
-      height={60} // covers belt height
-      fill={style.sensor_color || 'yellow'}
-      stroke="#333"
-      style={{ cursor: 'grab' }}
-    />
-  </DraggableCore>
-
-  {/* Motor */}
-  <rect
-    x={30}
-    y={100 + style.belt_width / 2 - 12}
-    width={24}
-    height={24}
-    fill={style.motor_color || '#222'}
-  />
-  <text x={10} y={100 + style.belt_width + 40} fontSize={12}>
-    Motor
-  </text>
-</svg>
-
-
-        <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
-          <button onClick={toggleStart}>Start</button>
-          <button onClick={toggleStop}>Stop</button>
-          <button onClick={() => setObjects([{ id: Date.now(), x: 120 }])}>Reset Objects</button>
-          <button onClick={saveConfig}>Save config</button>
-        </div>
-
-        <div style={{ marginTop: 10 }}>
-          <b>Outputs:</b>{' '}
-          {Object.entries(outputs).map(([k, v]) => (
-            <span key={k} style={{ marginRight: 8 }}>
-              {k}: <strong>{String(v)}</strong>
+      <div style={{ flex: 1 }}>
+        {/* Header */}
+        <div style={{
+          background: '#263238',
+          color: 'white',
+          padding: '15px',
+          borderRadius: '8px',
+          marginBottom: '20px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span>🏭 {belt.name || `Conveyor Belt ${beltId}`}</span>
+            <span style={{
+              fontSize: '12px',
+              background: motorStatus === 'ON' ? '#4CAF50' : '#F44336',
+              padding: '2px 8px',
+              borderRadius: '10px'
+            }}>
+              {motorStatus}
             </span>
-          ))}
-        </div>
-      </div>
-
-      <div style={{ width: 320 }}>
-        <h4>PLC (live)</h4>
-        <div style={{ maxHeight: 300, overflow: 'auto', fontFamily: 'monospace', color: 'black', background: '#fff', padding: 8, border: '1px solid #eee' }}>
-          <pre style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify(plc, null, 2)}</pre>
+          </h3>
         </div>
 
-        <h4>Logs</h4>
-        <div style={{ maxHeight: 200, overflow: 'auto', background: '#111', color: '#fff', padding: 8 }}>
-          {log.map((l, i) => (
-            <div key={i}>{l}</div>
-          ))}
+        {/* Camera Preview */}
+        <div style={{
+          marginBottom: '20px',
+          position: 'relative',
+          display: 'inline-block'
+        }}>
+          <div style={{ position: 'relative' }}>
+            <video
+              src={cameraUrl || 'http://localhost:8000/media/3.mp4'}
+              autoPlay
+              loop
+              muted
+              width={250}
+              style={{
+                border: '2px solid #455A64',
+                borderRadius: '8px',
+                boxShadow: '0 4px 8px rgba(0,0,0,0.3)'
+              }}
+            />
+            <button
+              onClick={() => setShowVideoModal(true)}
+              style={{
+                position: 'absolute',
+                bottom: '10px',
+                right: '10px',
+                background: 'rgba(0, 128, 255, 0.8)',
+                border: 'none',
+                borderRadius: '50%',
+                width: '40px',
+                height: '40px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'white',
+                fontSize: '20px',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+              }}
+              title="Expand camera view"
+            >
+              🔍
+            </button>
+          </div>
         </div>
 
-        <h4>Edit PLC rungs</h4>
-        <p style={{ fontSize: 12 }}>This is a simple JSON editor for PLC logic. For complex logic use a dedicated editor.</p>
-        <textarea
-          style={{ width: '100%', height: 200 }}
-          value={JSON.stringify(plc, null, 2)}
-          onChange={(e) => {
-            try {
-              const parsed = JSON.parse(e.target.value);
-              setPlc(parsed);
-            } catch (err) {}
-          }}
+        {/* Components */}
+        <ConveyorVisualization
+          style={style}
+          plc={plc}
+          objects={objects}
+          offset={offset}
+          onSensorDrag={onSensorDrag}
+          onCameraClick={() => setShowVideoModal(true)}
+        />
+
+        <ControlPanel
+          motorStatus={motorStatus}
+          onStart={toggleStart}
+          onStop={toggleStop}
+          onEmergencyStop={emergencyStop}
+          onReset={resetObjects}
+          onSave={saveConfig}
+          onRefresh={refreshFromBackend}
+          lastFetchTime={lastFetchRef.current}
+        />
+
+        <StatusPanel
+          plc={plc}
+          currentSpeed={currentSpeed}
+          apiBase={apiBase}
+          beltId={beltId}
+          style={style}
+        />
+
+        <LogPanel
+          log={log}
+          onClearLog={onClearLog}
         />
       </div>
     </div>
