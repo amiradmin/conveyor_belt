@@ -51,7 +51,7 @@ function MainLayout() {
 
   const menuItems = [
     { text: 'داشبورد اصلی', icon: <DashboardIcon />, path: '/' },
-    { text: 'نوارهای نقاله', icon: <PlayCircleIcon />, path: '/belts' },
+    { text: 'نوارهای نقاله', icon: <PlayCircleIcon />, path: '/simulator' },
     { text: 'آلارم‌ها', icon: <WarningIcon />, path: '/alarms', badge: unreadNotifications },
     { text: 'متریک‌ها', icon: <SpeedIcon />, path: '/metrics' },
     { text: 'تاریخچه', icon: <HistoryIcon />, path: '/history' },
