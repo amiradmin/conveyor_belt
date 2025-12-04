@@ -10,7 +10,7 @@ export default function ConveyorVisualization({
   onSensorDrag,
   onCameraClick
 }) {
-    console.log(style.style.belt_width);
+
   const motorStatus = plc?.outputs?.motor_on ? 'ON' : 'OFF';
   // Use the running/stopped color based on motor status
   const beltColor = motorStatus === 'ON'

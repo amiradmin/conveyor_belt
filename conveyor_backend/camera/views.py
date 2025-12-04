@@ -219,33 +219,77 @@ class AlertViewSet(viewsets.ModelViewSet):
 
 
 # ===== VIDEO PROCESSING APIS =====
-
 class ProcessVideoFile(APIView):
     def post(self, request):
         """
         Start video processing asynchronously
         """
         video_path = request.data.get("video_path")
-        if not video_path or not os.path.exists(video_path):
-            return Response({"error": "Video file not found"}, status=400)
+        camera_id = request.data.get("camera_id", "default")
+
+        if not video_path:
+            return Response(
+                {"error": "video_path is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        logger.info(f"Processing video request received. Path: {video_path}")
+
+        # Try to find the video file
+        actual_path = self.find_video_file(video_path)
+
+        if not actual_path:
+            return Response(
+                {
+                    "error": "Video file not found",
+                    "attempted_path": video_path,
+                    "suggestions": [
+                        "Use absolute server path",
+                        "Store videos in MEDIA_ROOT folder",
+                        "Check file permissions"
+                    ]
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Validate it's a video file
+        if not self.is_valid_video(actual_path):
+            return Response(
+                {"error": "Invalid video file format"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         # Start async processing
         try:
             result = video_processor.process_video_async(
-                video_path,
+                actual_path,
+                camera_id=camera_id,
                 callback=self._processing_complete_callback
             )
-            return Response(result)
+
+            return Response({
+                "status": "processing_started",
+                "video_path": actual_path,
+                "message": "Video processing started successfully",
+                "file_info": {
+                    "size": os.path.getsize(actual_path),
+                    "exists": os.path.exists(actual_path)
+                }
+            })
+
         except Exception as e:
-            logger.error(f"Video processing error: {str(e)}")
-            return Response({"error": "Processing failed"}, status=500)
+            logger.error(f"Video processing error: {str(e)}", exc_info=True)
+            return Response(
+                {"error": "Processing failed", "details": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     def _processing_complete_callback(self, result):
         """Callback when video processing is complete"""
         # You can store results in database or send final WebSocket message here
         logger.info(f"Video processing completed: {result}")
 
-        # Send WebSocket notification
+        # Send WebSocket notification if needed
         try:
             channel_layer = get_channel_layer()
             async_to_sync(channel_layer.group_send)(
@@ -258,24 +302,126 @@ class ProcessVideoFile(APIView):
         except Exception as e:
             logger.error(f"WebSocket callback error: {str(e)}")
 
-    def get(self, request):
-        """Get current processing status"""
+    def find_video_file(self, path):
+        """Try to locate the video file using multiple strategies"""
+        from django.conf import settings
+
+        possibilities = []
+
+        # 1. If it's a URL, extract the path
+        if path.startswith('http://') or path.startswith('https://'):
+            from urllib.parse import urlparse
+            parsed = urlparse(path)
+            path = parsed.path
+
+        # 2. If it's already an absolute path
+        if os.path.isabs(path):
+            possibilities.append(path)
+
+        # 3. Relative to MEDIA_ROOT
+        possibilities.append(os.path.join(settings.MEDIA_ROOT, path.lstrip('/')))
+
+        # 4. Just the filename in MEDIA_ROOT
+        possibilities.append(os.path.join(settings.MEDIA_ROOT, os.path.basename(path)))
+
+        # 5. Current directory
+        possibilities.append(os.path.join(os.getcwd(), path))
+
+        # 6. Common test video locations
+        test_videos = ['3.mp4', 'test_video.mp4', 'sample.mp4', 'conveyor.mp4']
+        for video in test_videos:
+            possibilities.append(os.path.join(settings.MEDIA_ROOT, video))
+            possibilities.append(os.path.join(settings.BASE_DIR, 'media', video))
+            possibilities.append(os.path.join('/tmp', video))
+
+        # Try each possibility
+        for possible_path in possibilities:
+            if os.path.exists(possible_path):
+                logger.info(f"Found video at: {possible_path}")
+                return possible_path
+
+        logger.warning(f"Video not found. Tried: {possibilities}")
+        return None
+
+    def is_valid_video(self, path):
+        """Check if file is a valid video"""
         try:
-            status = video_processor.get_status()
-            return Response(status)
+            cap = cv2.VideoCapture(path)
+            if not cap.isOpened():
+                logger.error(f"Could not open video: {path}")
+                return False
+
+            # Check if we can read at least one frame
+            ret, frame = cap.read()
+            cap.release()
+
+            if not ret:
+                logger.error(f"Could not read frames from: {path}")
+                return False
+
+            logger.info(f"Valid video: {path}, Frame size: {frame.shape if frame is not None else 'N/A'}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Video validation error for {path}: {str(e)}")
+            return False
+
+    def get(self, request):
+        """Get current processing status and list available videos"""
+        try:
+            # Return available videos in MEDIA_ROOT
+            from django.conf import settings
+            import glob
+
+            available_videos = []
+            media_root = settings.MEDIA_ROOT
+
+            if os.path.exists(media_root):
+                video_extensions = ['*.mp4', '*.avi', '*.mov', '*.mkv', '*.flv']
+                for ext in video_extensions:
+                    videos = glob.glob(os.path.join(media_root, ext))
+                    for video in videos:
+                        rel_path = os.path.relpath(video, media_root)
+                        available_videos.append({
+                            'path': rel_path,
+                            'full_path': video,
+                            'size': os.path.getsize(video),
+                            'exists': True
+                        })
+
+            # Get processing status
+            status_info = video_processor.get_status()
+            status_info['available_videos'] = available_videos
+            status_info['media_root'] = media_root
+
+            return Response(status_info)
         except Exception as e:
             logger.error(f"Status check error: {str(e)}")
-            return Response({"error": "Status check failed"}, status=500)
+            return Response(
+                {"error": "Status check failed"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     def delete(self, request):
         """Stop current processing"""
         try:
-            video_processor.stop_processing()
-            return Response({"status": "stopped"})
+            job_id = request.data.get('job_id')
+            if job_id:
+                video_processor.stop_processing(job_id)
+                return Response({
+                    "status": "stopped",
+                    "job_id": job_id,
+                    "message": "Processing job stopped"
+                })
+            else:
+                video_processor.stop_processing()
+                return Response({"status": "all_processing_stopped"})
         except Exception as e:
             logger.error(f"Stop processing error: {str(e)}")
-            return Response({"error": "Stop failed"}, status=500)
-
+            return Response(
+                {"error": "Stop failed", "details": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class RealTimeAnalysisAPI(APIView):
     """Lightweight API for real-time frame analysis without blocking"""
@@ -351,6 +497,8 @@ class RealTimeAnalysisAPI(APIView):
         thread.start()
 
 
+# In camera/views.py, update the ConveyorAnalysisAPI class:
+
 class ConveyorAnalysisAPI(APIView):
     def __init__(self):
         super().__init__()
@@ -407,12 +555,358 @@ class ConveyorAnalysisAPI(APIView):
             return response
 
         except Exception as e:
-            logger.error(f"Error in conveyor analysis: {str(e)}")
-            return Response({"error": "Internal server error"}, status=500)
+            logger.error(f"Error in conveyor analysis: {str(e)}", exc_info=True)
+            return Response({"error": "Internal server error", "details": str(e)}, status=500)
 
-    # ... (keep all your existing ConveyorAnalysisAPI methods as they are)
-    # They look good - just add proper error handling if needed
+    def analyze_objects_with_contours(self, frame):
+        """Enhanced object detection using contour analysis"""
+        try:
+            # Convert to grayscale
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
+            # Apply Gaussian blur
+            blur = cv2.GaussianBlur(gray, (7, 7), 0)
+
+            # Edge detection
+            edges = cv2.Canny(blur, 50, 150)
+
+            # Find contours
+            contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+            objects = []
+            valid_contours = []
+
+            for contour in contours:
+                area = cv2.contourArea(contour)
+                if area > 500:  # Minimum area threshold
+                    # Get bounding box
+                    x, y, w, h = cv2.boundingRect(contour)
+
+                    # Calculate center
+                    center_x = x + w // 2
+                    center_y = y + h // 2
+
+                    # Calculate confidence based on contour solidity
+                    hull = cv2.convexHull(contour)
+                    hull_area = cv2.contourArea(hull)
+                    solidity = area / hull_area if hull_area > 0 else 0
+                    confidence = min(0.3 + solidity * 0.7, 0.95)  # Scale to 0.3-0.95
+
+                    object_data = {
+                        "id": len(objects) + 1,
+                        "bbox": [float(x), float(y), float(x + w), float(y + h)],
+                        "center": [float(center_x), float(center_y)],
+                        "size": float(area),
+                        "confidence": float(confidence),
+                        "label": "object",
+                        "color": "#00FF00"  # Default green color
+                    }
+                    objects.append(object_data)
+                    valid_contours.append(contour)
+
+            return {
+                "object_count": len(objects),
+                "objects": objects,
+                "total_area": sum([obj["size"] for obj in objects]),
+                "average_confidence": np.mean([obj["confidence"] for obj in objects]) if objects else 0
+            }
+
+        except Exception as e:
+            logger.error(f"Contour analysis error: {str(e)}")
+            return {"object_count": 0, "objects": [], "total_area": 0, "average_confidence": 0}
+
+    def analyze_belt_alignment(self, frame):
+        """Analyze belt alignment and center deviation"""
+        try:
+            height, width = frame.shape[:2]
+
+            # Convert to grayscale
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+            # Apply threshold to detect belt edges
+            _, thresh = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY)
+
+            # Find contours of belt edges
+            contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+            if len(contours) > 0:
+                # Find the largest contour (likely the belt)
+                largest_contour = max(contours, key=cv2.contourArea)
+                x, y, w, h = cv2.boundingRect(largest_contour)
+
+                # Calculate center of belt
+                belt_center = x + w // 2
+                frame_center = width // 2
+                deviation = belt_center - frame_center
+
+                # Calculate deviation percentage
+                max_deviation = width * 0.2  # 20% of frame width
+                deviation_percentage = abs(deviation) / max_deviation * 100
+
+                return {
+                    "belt_width": w,
+                    "belt_height": h,
+                    "deviation": float(deviation),
+                    "deviation_percentage": float(deviation_percentage),
+                    "max_deviation": float(max_deviation),
+                    "status": "good" if deviation_percentage < 10 else "warning" if deviation_percentage < 20 else "critical"
+                }
+            else:
+                return {
+                    "belt_width": width,
+                    "belt_height": height,
+                    "deviation": 0.0,
+                    "deviation_percentage": 0.0,
+                    "max_deviation": width * 0.2,
+                    "status": "unknown"
+                }
+
+        except Exception as e:
+            logger.error(f"Belt alignment analysis error: {str(e)}")
+            return {
+                "belt_width": frame.shape[1] if frame is not None else 0,
+                "belt_height": frame.shape[0] if frame is not None else 0,
+                "deviation": 0.0,
+                "deviation_percentage": 0.0,
+                "max_deviation": 100.0,
+                "status": "error"
+            }
+
+    def analyze_load_distribution(self, objects):
+        """Analyze load distribution across the conveyor"""
+        try:
+            if not objects:
+                return {
+                    "load_level": 0,
+                    "distribution": "empty",
+                    "density": 0.0,
+                    "clustering_score": 0.0
+                }
+
+            # Calculate total area of objects
+            total_area = sum(obj.get("size", 0) for obj in objects)
+
+            # Estimate frame area (assuming standard resolution)
+            frame_area = 640 * 480  # Default frame size
+
+            # Calculate load percentage
+            load_percentage = min((total_area / frame_area) * 100, 100)
+
+            # Analyze distribution (check if objects are evenly spread)
+            centers = [obj.get("center", [0, 0]) for obj in objects]
+            x_coords = [center[0] for center in centers if len(center) >= 2]
+
+            if len(x_coords) > 1:
+                x_std = np.std(x_coords)
+                distribution = "even" if x_std < 100 else "clustered" if x_std < 200 else "scattered"
+                clustering_score = min(x_std / 300, 1.0)
+            else:
+                distribution = "unknown"
+                clustering_score = 0.0
+
+            return {
+                "load_level": float(load_percentage),
+                "distribution": distribution,
+                "density": float(total_area / len(objects)) if objects else 0,
+                "clustering_score": float(clustering_score)
+            }
+
+        except Exception as e:
+            logger.error(f"Load distribution analysis error: {str(e)}")
+            return {
+                "load_level": 0,
+                "distribution": "error",
+                "density": 0.0,
+                "clustering_score": 0.0
+            }
+
+    def analyze_safety_issues(self, frame, objects):
+        """Detect safety issues like objects near edges"""
+        try:
+            height, width = frame.shape[:2]
+            safety_margin = 50  # pixels from edge
+            safety_zones = []
+            issues = []
+
+            # Define safety zones (edges of the frame)
+            safety_zones.append({
+                "x": 0,
+                "y": 0,
+                "width": width,
+                "height": safety_margin,
+                "type": "top_edge",
+                "risk": "high"
+            })
+            safety_zones.append({
+                "x": 0,
+                "y": height - safety_margin,
+                "width": width,
+                "height": safety_margin,
+                "type": "bottom_edge",
+                "risk": "high"
+            })
+            safety_zones.append({
+                "x": 0,
+                "y": 0,
+                "width": safety_margin,
+                "height": height,
+                "type": "left_edge",
+                "risk": "medium"
+            })
+            safety_zones.append({
+                "x": width - safety_margin,
+                "y": 0,
+                "width": safety_margin,
+                "height": height,
+                "type": "right_edge",
+                "risk": "medium"
+            })
+
+            # Check each object for safety issues
+            for obj in objects:
+                bbox = obj.get("bbox", [0, 0, 0, 0])
+                if len(bbox) >= 4:
+                    x1, y1, x2, y2 = bbox
+
+                    # Check if object is too close to edges
+                    if (x1 < safety_margin or x2 > width - safety_margin or
+                            y1 < safety_margin or y2 > height - safety_margin):
+
+                        issue_type = []
+                        if x1 < safety_margin:
+                            issue_type.append("left_edge")
+                        if x2 > width - safety_margin:
+                            issue_type.append("right_edge")
+                        if y1 < safety_margin:
+                            issue_type.append("top_edge")
+                        if y2 > height - safety_margin:
+                            issue_type.append("bottom_edge")
+
+                        issues.append({
+                            "object_id": obj.get("id"),
+                            "type": issue_type,
+                            "severity": "warning",
+                            "message": f"Object {obj.get('id')} too close to {', '.join(issue_type)}"
+                        })
+
+            return {
+                "safety_zones": safety_zones,
+                "issues": issues,
+                "risk_level": "high" if len(issues) > 3 else "medium" if len(issues) > 0 else "low"
+            }
+
+        except Exception as e:
+            logger.error(f"Safety analysis error: {str(e)}")
+            return {
+                "safety_zones": [],
+                "issues": [],
+                "risk_level": "unknown"
+            }
+
+    def check_alerts(self, objects_analysis, belt_analysis, load_analysis, safety_analysis, camera_id):
+        """Generate alerts based on analysis results"""
+        alerts = []
+
+        # Object count alerts
+        if objects_analysis.get("object_count", 0) > 15:
+            alerts.append({
+                "type": "high_density",
+                "severity": "warning",
+                "message": f"High object density detected: {objects_analysis['object_count']} objects",
+                "camera_id": camera_id
+            })
+
+        # Belt alignment alerts
+        deviation_percentage = belt_analysis.get("deviation_percentage", 0)
+        if deviation_percentage > 20:
+            alerts.append({
+                "type": "belt_misalignment",
+                "severity": "critical",
+                "message": f"Belt misalignment detected: {deviation_percentage:.1f}% deviation",
+                "camera_id": camera_id
+            })
+        elif deviation_percentage > 10:
+            alerts.append({
+                "type": "belt_misalignment",
+                "severity": "warning",
+                "message": f"Belt slightly misaligned: {deviation_percentage:.1f}% deviation",
+                "camera_id": camera_id
+            })
+
+        # Load alerts
+        load_level = load_analysis.get("load_level", 0)
+        if load_level > 80:
+            alerts.append({
+                "type": "overload",
+                "severity": "critical",
+                "message": f"Conveyor overload detected: {load_level:.1f}% load",
+                "camera_id": camera_id
+            })
+        elif load_level > 60:
+            alerts.append({
+                "type": "high_load",
+                "severity": "warning",
+                "message": f"High conveyor load: {load_level:.1f}%",
+                "camera_id": camera_id
+            })
+
+        # Safety alerts
+        safety_issues = safety_analysis.get("issues", [])
+        if len(safety_issues) > 0:
+            alerts.append({
+                "type": "safety_risk",
+                "severity": "warning" if len(safety_issues) <= 3 else "critical",
+                "message": f"{len(safety_issues)} safety risk(s) detected",
+                "camera_id": camera_id
+            })
+
+        return alerts
+
+    def calculate_system_health(self, objects_analysis, belt_analysis, load_analysis):
+        """Calculate overall system health score (0-100)"""
+        try:
+            # Object analysis score (based on confidence and count)
+            object_score = min(objects_analysis.get("average_confidence", 0) * 100, 100)
+            object_count = objects_analysis.get("object_count", 0)
+            if object_count > 20:
+                object_score *= 0.8  # Penalize for too many objects
+            elif object_count == 0:
+                object_score = 50  # Base score for empty conveyor
+
+            # Belt alignment score
+            deviation = abs(belt_analysis.get("deviation_percentage", 0))
+            belt_score = max(100 - deviation * 2, 0)  # 10% deviation = 80 score
+
+            # Load score
+            load_level = load_analysis.get("load_level", 0)
+            load_score = 100 - abs(load_level - 50) / 2  # Optimal at 50% load
+
+            # Weighted average
+            health_score = (
+                    object_score * 0.4 +  # 40% weight to object detection
+                    belt_score * 0.3 +  # 30% weight to belt alignment
+                    load_score * 0.3  # 30% weight to load distribution
+            )
+
+            return max(0, min(100, health_score))
+
+        except Exception as e:
+            logger.error(f"Health calculation error: {str(e)}")
+            return 50.0  # Default score
+
+    def send_websocket_update(self, analysis, camera_id):
+        """Send analysis update via WebSocket"""
+        try:
+            channel_layer = get_channel_layer()
+            async_to_sync(channel_layer.group_send)(
+                f"conveyor_{camera_id}",
+                {
+                    "type": "realtime_update",
+                    "data": analysis
+                }
+            )
+        except Exception as e:
+            logger.error(f"WebSocket update error: {str(e)}")
 
 # ===== SYSTEM STATUS APIS =====
 

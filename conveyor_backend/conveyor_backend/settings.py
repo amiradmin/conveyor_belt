@@ -22,10 +22,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-1#wtzt%u#78v!kkk==ppe*j05c2&rbs(qh4dlc+i#kjqt0^6%a'
+# Use environment variable for production
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-1#wtzt%u#78v!kkk==ppe*j05c2&rbs(qh4dlc+i#kjqt0^6%a')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DJANGO_DEBUG', 'True') == 'True'
 
 
 ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'backend', 'dev.mite.co.ir']
@@ -155,21 +156,59 @@ STATICFILES_DIRS = [
 ]
 
 
-
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://172.18.0.4:5173",
-    "http://frontend:3000",
+# CORS Configuration
+# =================
 
+# For development (DEBUG=True), allow all origins for convenience
+# For production, use CORS_ALLOWED_ORIGINS with specific domains
+if DEBUG:
+    CORS_ALLOW_ALL_ORIGINS = True
+else:
+    CORS_ALLOWED_ORIGINS = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://172.18.0.4:5173",
+        "http://frontend:3000",
+        "http://localhost:8080",
+        "https://dev.mite.co.ir",
+        # Add your production frontend domains here
+    ]
+
+# Common CORS settings for both development and production
+CORS_ALLOW_CREDENTIALS = True
+
+CORS_ALLOW_METHODS = [
+    "DELETE",
+    "GET",
+    "OPTIONS",
+    "PATCH",
+    "POST",
+    "PUT",
 ]
+
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+    'access-control-allow-origin',
+    'access-control-allow-headers',
+]
+
+# Optional: Expose additional headers if needed
+CORS_EXPOSE_HEADERS = ['Content-Disposition']
 
 ASGI_APPLICATION = 'conveyor_backend.asgi.application'
 
@@ -179,15 +218,19 @@ CHANNEL_LAYERS = {
         "BACKEND": "channels.layers.InMemoryChannelLayer"
     }
 }
-CORS_ALLOW_ALL_ORIGINS = True
-CORS_ALLOW_HEADERS = [
-    "content-type",
-    "authorization",
-    "accept",
-    "origin",
-    "x-requested-with",
-]
-CORS_ALLOW_METHODS = ["GET", "POST", "OPTIONS"]
 
+# Production security settings (only applied when not DEBUG)
+if not DEBUG:
+    # Security settings for production
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = 'DENY'
 
-CORS_ALLOW_CREDENTIALS = True
+    # HSTS settings (be careful with this - only enable if you're sure)
+    # SECURE_HSTS_SECONDS = 31536000  # 1 year
+    # SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    # SECURE_HSTS_PRELOAD = True

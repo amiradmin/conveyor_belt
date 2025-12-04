@@ -1,234 +1,183 @@
+# camera/services/video_processor.py
 import cv2
-import base64
-import os
-import numpy as np
-from collections import deque
 import threading
 import time
-from django.utils import timezone
+import json
+from datetime import datetime
 import logging
-from channels.layers import get_channel_layer
-from asgiref.sync import async_to_sync
 
 logger = logging.getLogger(__name__)
 
 
 class VideoProcessor:
     def __init__(self):
-        self.is_processing = False
-        self.current_progress = 0
-        self.processed_frames = []
-        self.object_count = 0
-        self.belt_speed = 0
-        self.processing_thread = None
-        self.channel_layer = get_channel_layer()
+        self.processing = False
+        self.current_job = None
+        self.progress = 0
+        self.results = {}
+        self.jobs = {}
 
-    def process_video_async(self, video_path, callback=None):
-        """Start video processing in a separate thread"""
-        if self.is_processing:
-            return {"error": "Already processing a video"}
+    def process_video_async(self, video_path, camera_id="default", callback=None):
+        """Start video processing in background thread"""
+        job_id = f"job_{int(time.time())}_{camera_id}"
 
-        self.is_processing = True
-        self.current_progress = 0
-        self.processed_frames = []
+        self.jobs[job_id] = {
+            'video_path': video_path,
+            'camera_id': camera_id,
+            'status': 'processing',
+            'progress': 0,
+            'start_time': datetime.now().isoformat(),
+            'results': None,
+            'callback': callback
+        }
 
         # Start processing in background thread
-        self.processing_thread = threading.Thread(
-            target=self._process_video_thread,
-            args=(video_path, callback)
+        thread = threading.Thread(
+            target=self._process_video,
+            args=(job_id, video_path, camera_id, callback)
         )
-        self.processing_thread.daemon = True
-        self.processing_thread.start()
+        thread.daemon = True
+        thread.start()
 
-        return {"status": "started", "message": "Video processing started"}
+        return {
+            'job_id': job_id,
+            'status': 'started',
+            'message': f'Processing started for {video_path}'
+        }
 
-    def _process_video_thread(self, video_path, callback=None):
-        """Background thread for video processing"""
+    def _process_video(self, job_id, video_path, camera_id, callback):
+        """Background video processing"""
         try:
+            logger.info(f"Starting video processing for job {job_id}")
+
+            # Open video
             cap = cv2.VideoCapture(video_path)
             if not cap.isOpened():
-                self._send_error("Could not open video file")
+                self.jobs[job_id]['status'] = 'error'
+                self.jobs[job_id]['error'] = 'Could not open video file'
+                if callback:
+                    callback({'error': 'Could not open video file'})
                 return
 
+            # Get video properties
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+            logger.info(f"Video info: {total_frames} frames, {fps} fps, {width}x{height}")
+
+            analysis_results = {
+                'job_id': job_id,
+                'camera_id': camera_id,
+                'video_path': video_path,
+                'total_frames': total_frames,
+                'fps': fps,
+                'resolution': f"{width}x{height}",
+                'frames_processed': 0,
+                'object_counts': [],
+                'detections': [],
+                'start_time': datetime.now().isoformat(),
+                'processing_type': 'full_video_analysis'
+            }
+
             frame_count = 0
-            processed_count = 0
-            zoom_factor = 3
-            large_stone_area = 1000
+            processed_frames = 0
 
-            # Calibration
-            PIXELS_PER_METER = 200
-            VIDEO_FPS = cap.get(cv2.CAP_PROP_FPS) or 30
-            SKIP_FRAMES = 5
-
-            # Store previous x-coordinates to smooth speed
-            prev_x_queue = deque(maxlen=5)
-
-            while self.is_processing:
+            while True:
                 ret, frame = cap.read()
                 if not ret:
                     break
 
                 frame_count += 1
 
-                # Only process every SKIP_FRAMES frame
-                if processed_count % SKIP_FRAMES != 0:
-                    processed_count += 1
-                    continue
+                # Process every 10th frame for speed
+                if frame_count % 10 == 0:
+                    processed_frames += 1
 
-                # Update progress
-                self.current_progress = int((frame_count / total_frames) * 100)
+                    # Simple object detection (replace with your actual processing)
+                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+                    edges = cv2.Canny(blur, 50, 150)
+                    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-                # Process frame
-                processed_frame_data = self._process_single_frame(
-                    frame, zoom_factor, large_stone_area,
-                    prev_x_queue, VIDEO_FPS, SKIP_FRAMES, PIXELS_PER_METER
-                )
+                    object_count = len([cnt for cnt in contours if cv2.contourArea(cnt) > 100])
+                    analysis_results['object_counts'].append({
+                        'frame': frame_count,
+                        'count': object_count
+                    })
 
-                self.processed_frames.append(processed_frame_data['frame_base64'])
-                self.object_count = processed_frame_data['object_count']
-                self.belt_speed = processed_frame_data['belt_speed']
+                    # Update progress
+                    progress = int((frame_count / total_frames) * 100)
+                    self.jobs[job_id]['progress'] = progress
+                    self.jobs[job_id]['frames_processed'] = processed_frames
 
-                # Send WebSocket update
-                self._send_progress_update(
-                    processed_count,
-                    processed_frame_data['object_count'],
-                    processed_frame_data['belt_speed']
-                )
-
-                processed_count += 1
-
-                # Small delay to prevent overwhelming the system
-                time.sleep(0.01)
+                    # Simulate processing delay
+                    time.sleep(0.01)
 
             cap.release()
 
-            # Final update
-            self.current_progress = 100
-            self._send_progress_update(
-                processed_count,
-                self.object_count,
-                self.belt_speed,
-                is_final=True
-            )
+            # Calculate summary statistics
+            if analysis_results['object_counts']:
+                counts = [item['count'] for item in analysis_results['object_counts']]
+                analysis_results['average_objects'] = sum(counts) / len(counts)
+                analysis_results['max_objects'] = max(counts)
+                analysis_results['min_objects'] = min(counts)
+
+            analysis_results['frames_processed'] = processed_frames
+            analysis_results['end_time'] = datetime.now().isoformat()
+            analysis_results['status'] = 'completed'
+
+            # Save results
+            self.jobs[job_id]['status'] = 'completed'
+            self.jobs[job_id]['progress'] = 100
+            self.jobs[job_id]['results'] = analysis_results
+            self.jobs[job_id]['end_time'] = analysis_results['end_time']
+
+            logger.info(f"Video processing completed for job {job_id}")
 
             # Call callback if provided
             if callback:
-                callback({
-                    "original_video_url": f"http://localhost:8000/media/{os.path.basename(video_path)}",
-                    "total_frames": total_frames,
-                    "processed_frames_count": processed_count,
-                    "frames": self.processed_frames,
-                })
+                callback(analysis_results)
 
         except Exception as e:
-            logger.error(f"Video processing error: {str(e)}")
-            self._send_error(f"Processing error: {str(e)}")
-        finally:
-            self.is_processing = False
-
-    def _process_single_frame(self, frame, zoom_factor, large_stone_area, prev_x_queue, video_fps, skip_frames,
-                              pixels_per_meter):
-        """Process a single frame and return analysis data"""
-        # Zoom image
-        frame = cv2.resize(frame, (frame.shape[1] * zoom_factor, frame.shape[0] * zoom_factor))
-
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        blur = cv2.GaussianBlur(gray, (5, 5), 0)
-
-        # Conveyor belt mask
-        mask = np.zeros_like(blur)
-        h, w = blur.shape
-        cv2.rectangle(mask, (50, int(h * 0.3)), (w - 50, int(h * 0.7)), 255, -1)
-        masked = cv2.bitwise_and(blur, blur, mask=mask)
-
-        # Threshold + Canny
-        _, thresh = cv2.threshold(masked, 50, 255, cv2.THRESH_BINARY)
-        edges = cv2.Canny(thresh, 50, 150)
-
-        # Contours
-        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        frame_copy = frame.copy()
-
-        # Count objects
-        object_count = 0
-        for cnt in contours:
-            area = cv2.contourArea(cnt)
-            color = (0, 0, 255) if area >= large_stone_area else (0, 255, 0)
-            cv2.drawContours(frame_copy, [cnt], -1, color, 2)
-            if area >= 100:
-                object_count += 1
-
-        # Estimate belt speed
-        belt_speed_kmh = 0
-        if contours:
-            largest = max(contours, key=cv2.contourArea)
-            x, y, w_box, h_box = cv2.boundingRect(largest)
-            prev_x_queue.append(x)
-
-            if len(prev_x_queue) >= 2:
-                displacement_pixels = abs(prev_x_queue[-1] - prev_x_queue[0])
-                time_sec = (len(prev_x_queue) * skip_frames) / video_fps
-                belt_speed_m_per_s = (displacement_pixels / pixels_per_meter) / time_sec
-                belt_speed_kmh = belt_speed_m_per_s * 3.6
-
-        # Resize and encode frame
-        small = cv2.resize(frame_copy, (320, 240))
-        _, buffer = cv2.imencode(".jpg", small)
-        frame_base64 = base64.b64encode(buffer).decode("utf-8")
-
-        return {
-            'frame_base64': frame_base64,
-            'object_count': object_count,
-            'belt_speed': round(belt_speed_kmh, 2)
-        }
-
-    def _send_progress_update(self, frame_number, object_count, belt_speed, is_final=False):
-        """Send progress update via WebSocket"""
-        try:
-            async_to_sync(self.channel_layer.group_send)(
-                "frame_progress",
-                {
-                    "type": "progress_message",
-                    "frame": frame_number,
-                    "object_count": object_count,
-                    "belt_speed": belt_speed,
-                    "progress": self.current_progress,
-                    "is_final": is_final
-                }
-            )
-        except Exception as e:
-            logger.error(f"WebSocket send error: {str(e)}")
-
-    def _send_error(self, error_message):
-        """Send error via WebSocket"""
-        try:
-            async_to_sync(self.channel_layer.group_send)(
-                "frame_progress",
-                {
-                    "type": "error_message",
-                    "error": error_message
-                }
-            )
-        except Exception as e:
-            logger.error(f"WebSocket error send error: {str(e)}")
-
-    def stop_processing(self):
-        """Stop the current video processing"""
-        self.is_processing = False
-        if self.processing_thread and self.processing_thread.is_alive():
-            self.processing_thread.join(timeout=5.0)
+            logger.error(f"Error processing video {video_path}: {str(e)}")
+            self.jobs[job_id]['status'] = 'error'
+            self.jobs[job_id]['error'] = str(e)
+            if callback:
+                callback({'error': str(e)})
 
     def get_status(self):
-        """Get current processing status"""
+        """Get overall processing status"""
+        active_jobs = {k: v for k, v in self.jobs.items() if v['status'] == 'processing'}
+        completed_jobs = {k: v for k, v in self.jobs.items() if v['status'] == 'completed'}
+        error_jobs = {k: v for k, v in self.jobs.items() if v['status'] == 'error'}
+
         return {
-            "is_processing": self.is_processing,
-            "progress": self.current_progress,
-            "object_count": self.object_count,
-            "belt_speed": self.belt_speed,
-            "processed_frames_count": len(self.processed_frames)
+            'active_jobs': len(active_jobs),
+            'completed_jobs': len(completed_jobs),
+            'error_jobs': len(error_jobs),
+            'total_jobs': len(self.jobs),
+            'jobs': list(self.jobs.keys())
         }
 
+    def get_job_status(self, job_id):
+        """Get status of specific job"""
+        if job_id in self.jobs:
+            return self.jobs[job_id]
+        return {'error': 'Job not found'}
 
-# Global video processor instance
+    def stop_processing(self, job_id=None):
+        """Stop processing"""
+        if job_id and job_id in self.jobs:
+            self.jobs[job_id]['status'] = 'stopped'
+            return True
+        elif job_id is None:
+            for jid in self.jobs:
+                self.jobs[jid]['status'] = 'stopped'
+            return True
+        return False
+
+
+# Global instance
 video_processor = VideoProcessor()
