@@ -522,11 +522,17 @@ class ConveyorAnalysisAPI(APIView):
             if frame is None:
                 return Response({"error": "Invalid image"}, status=400)
 
-            # Analyze objects with enhanced contour detection
+            # Analyze objects with enhanced contour detection (Iron Ore)
             objects_analysis = self.analyze_objects_with_contours(frame)
             belt_analysis = self.analyze_belt_alignment(frame)
             load_analysis = self.analyze_load_distribution(objects_analysis["objects"])
             safety_analysis = self.analyze_safety_issues(frame, objects_analysis["objects"])
+            
+            # Calculate belt speed from object movement
+            belt_speed = self.calculate_belt_speed(objects_analysis["objects"])
+            
+            # Calculate weight and detect overweight for Iron Ore
+            weight_analysis = self.calculate_weight_and_overweight(objects_analysis["objects"], load_analysis)
 
             # Check for alerts
             alerts = self.check_alerts(objects_analysis, belt_analysis, load_analysis, safety_analysis, camera_id)
@@ -537,6 +543,9 @@ class ConveyorAnalysisAPI(APIView):
                 **belt_analysis,
                 **load_analysis,
                 **safety_analysis,
+                **weight_analysis,
+                "belt_speed": belt_speed,
+                "current_speed": belt_speed,  # Alias for compatibility
                 "timestamp": self.frame_count,
                 "camera_id": camera_id,
                 "system_health": self.calculate_system_health(objects_analysis, belt_analysis, load_analysis),
@@ -598,7 +607,7 @@ class ConveyorAnalysisAPI(APIView):
                         "center": [float(center_x), float(center_y)],
                         "size": float(area),
                         "confidence": float(confidence),
-                        "label": "object",
+                        "label": "Iron Ore",
                         "color": "#00FF00"  # Default green color
                     }
                     objects.append(object_data)
@@ -718,6 +727,73 @@ class ConveyorAnalysisAPI(APIView):
                 "distribution": "error",
                 "density": 0.0,
                 "clustering_score": 0.0
+            }
+
+    def calculate_belt_speed(self, objects):
+        """Calculate belt speed based on object movement (pixels per second to m/s conversion)"""
+        try:
+            if not objects:
+                return 0.0
+            
+            # Get current object positions (use first object's center x coordinate)
+            if objects and len(objects) > 0:
+                current_x = objects[0].get("center", [0, 0])[0]
+                self.prev_positions.append(current_x)
+            
+            # Calculate speed if we have enough history
+            if len(self.prev_positions) >= 2:
+                # Estimate pixels per frame
+                positions = list(self.prev_positions)
+                if len(positions) >= 2:
+                    # Average movement per frame
+                    movements = [abs(positions[i] - positions[i-1]) for i in range(1, len(positions))]
+                    avg_movement = np.mean(movements) if movements else 0
+                    
+                    # Assume 30 FPS and convert pixels to meters
+                    # Typical conversion: 1 pixel ≈ 0.001 meters (adjust based on camera setup)
+                    pixels_per_second = avg_movement * 30  # Assuming 30 FPS
+                    meters_per_second = pixels_per_second * 0.001  # Adjust this conversion factor
+                    
+                    return float(meters_per_second)
+            
+            return 0.0
+            
+        except Exception as e:
+            logger.error(f"Belt speed calculation error: {str(e)}")
+            return 0.0
+
+    def calculate_weight_and_overweight(self, objects, load_analysis):
+        """Calculate total weight and detect overweight conditions for Iron Ore"""
+        try:
+            # Estimate weight based on total area (Iron Ore density estimation)
+            # Assuming: 1 pixel² ≈ 0.01 kg (adjust based on actual calibration)
+            total_area = sum(obj.get("size", 0) for obj in objects)
+            estimated_weight = total_area * 0.01  # kg
+            
+            # Overweight threshold: if load_level > 80% or individual objects too large
+            load_level = load_analysis.get("load_level", 0)
+            max_object_size = max([obj.get("size", 0) for obj in objects], default=0)
+            
+            # Threshold: if any single Iron Ore piece is > 50000 pixels (large piece)
+            # or total load > 80%
+            overweight_detected = load_level > 80 or max_object_size > 50000
+            
+            return {
+                "total_weight": float(estimated_weight),
+                "total_area": float(total_area),
+                "overweight_detected": overweight_detected,
+                "max_object_size": float(max_object_size),
+                "load_percentage": float(load_level)
+            }
+            
+        except Exception as e:
+            logger.error(f"Weight calculation error: {str(e)}")
+            return {
+                "total_weight": 0.0,
+                "total_area": 0.0,
+                "overweight_detected": False,
+                "max_object_size": 0.0,
+                "load_percentage": 0.0
             }
 
     def analyze_safety_issues(self, frame, objects):

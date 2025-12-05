@@ -38,10 +38,16 @@
 
 @keyframes borderPulse {
   0%, 100% {
-    box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7);
+    box-shadow: 
+      0 4px 20px rgba(0, 0, 0, 0.5),
+      0 0 20px rgba(255, 204, 0, 0.3),
+      inset 0 1px 0 rgba(255, 204, 0, 0.2);
   }
   50% {
-    box-shadow: 0 0 0 10px rgba(76, 175, 80, 0);
+    box-shadow: 
+      0 4px 20px rgba(0, 0, 0, 0.5),
+      0 0 30px rgba(255, 204, 0, 0.5),
+      inset 0 1px 0 rgba(255, 204, 0, 0.2);
   }
 }
 
@@ -67,19 +73,41 @@
 
 /* Add these to your existing CSS module */
 
-/* Video Card Styles */
+/* Video Card Styles - Caterpillar Yellow & Black Theme */
 .videoCard {
-  background: #37474F;
-  padding: 15px;
-  border-radius: 10px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 
+    0 4px 20px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 204, 0, 0.1);
+  border: 1px solid rgba(255, 204, 0, 0.3);
   flex: 1;
   min-width: 250px;
+  position: relative;
+  overflow: hidden;
+}
+
+.videoCard::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    #ffcc00 50%, 
+    transparent 100%);
 }
 
 .processedFeed {
-  border: 2px solid #4CAF50;
+  border: 2px solid #ffcc00;
   animation: borderPulse 2s infinite;
+  box-shadow: 
+    0 4px 20px rgba(0, 0, 0, 0.5),
+    0 0 20px rgba(255, 204, 0, 0.3),
+    inset 0 1px 0 rgba(255, 204, 0, 0.2);
 }
 
 .cardHeader {
@@ -106,26 +134,41 @@
 }
 
 .statusIndicator.blue {
-  background-color: #0080FF;
+  background-color: #ffcc00;
+  box-shadow: 0 0 8px rgba(255, 204, 0, 0.6);
 }
 
 .statusIndicator.green {
-  background-color: #4CAF50;
+  background-color: #ffcc00;
+  box-shadow: 0 0 8px rgba(255, 204, 0, 0.6);
 }
 
 .statusIndicator.streamingActive {
-  animation: pulse 1s infinite;
-  box-shadow: 0 0 10px #4CAF50;
+  animation: pulse-yellow 1s infinite;
+  box-shadow: 0 0 12px #ffcc00;
+}
+
+@keyframes pulse-yellow {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba(255, 204, 0, 0.6);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(255, 204, 0, 0.9);
+    transform: scale(1.1);
+  }
 }
 
 .streamingBadge {
   font-size: 10px;
-  background: #F44336;
-  color: white;
-  padding: 2px 6px;
-  border-radius: 10px;
+  background: linear-gradient(135deg, #ffcc00 0%, #ffaa00 100%);
+  color: #000;
+  padding: 3px 8px;
+  border-radius: 12px;
   margin-left: 8px;
-  animation: pulse 1.5s infinite;
+  font-weight: 700;
+  animation: pulse-yellow 1.5s infinite;
+  box-shadow: 0 0 8px rgba(255, 204, 0, 0.5);
 }
 
 .headerActions {
@@ -135,41 +178,52 @@
 }
 
 .toggleAiBtn {
-  background: #4CAF50;
-  color: white;
-  border: none;
-  padding: 6px 12px;
-  border-radius: 4px;
+  background: linear-gradient(135deg, #ffcc00 0%, #ffaa00 100%);
+  color: #000;
+  border: 1px solid rgba(255, 204, 0, 0.6);
+  padding: 8px 14px;
+  border-radius: 6px;
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 12px;
+  font-weight: 600;
   transition: all 0.2s;
+  box-shadow: 
+    0 2px 8px rgba(255, 204, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
 .toggleAiBtn:hover {
-  opacity: 0.9;
-  transform: scale(1.05);
+  background: linear-gradient(135deg, #ffdd00 0%, #ffcc00 100%);
+  box-shadow: 
+    0 4px 12px rgba(255, 204, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  transform: translateY(-1px);
 }
 
 .cameraBadge {
   font-size: 11px;
-  color: #BDBDBD;
-  background-color: rgba(0,0,0,0.3);
-  padding: 3px 8px;
-  border-radius: 4px;
+  color: #ffcc00;
+  background-color: rgba(255, 204, 0, 0.15);
+  border: 1px solid rgba(255, 204, 0, 0.3);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-weight: 500;
 }
 
 .aiBadge {
   font-size: 11px;
-  color: #4CAF50;
-  background-color: rgba(76, 175, 80, 0.1);
-  padding: 3px 8px;
-  border-radius: 4px;
+  color: #ffcc00;
+  background-color: rgba(255, 204, 0, 0.15);
+  border: 1px solid rgba(255, 204, 0, 0.3);
+  padding: 4px 10px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   gap: 5px;
+  font-weight: 600;
 }
 
 .pulseIcon {
@@ -185,6 +239,30 @@
   background: #000;
 }
 
+.videoContainer:fullscreen {
+  height: 100vh;
+  width: 100vw;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.videoContainer:fullscreen img,
+.videoContainer:fullscreen video {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.videoContainer:fullscreen .fullscreenToggleBtn {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 10000;
+}
+
 video, .processedImage {
   width: 100%;
   border: 2px solid #455A64;
@@ -196,8 +274,9 @@ video, .processedImage {
 }
 
 .processedImage {
-  border-color: #4CAF50;
-  animation: imageFadeIn 0.5s ease-out;
+  border-color: #00FF00;
+  animation: imageFadeIn 0.2s ease-out;
+  transition: opacity 0.1s ease-in-out;
 }
 
 .processingPlaceholder {
@@ -227,24 +306,39 @@ video, .processedImage {
   position: absolute;
   bottom: 10px;
   right: 10px;
-  background: rgba(0, 128, 255, 0.9);
-  border: none;
+  background: linear-gradient(135deg, #ffcc00 0%, #ffaa00 100%);
+  border: 1px solid rgba(255, 204, 0, 0.6);
   border-radius: 50%;
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
+  color: #000;
   font-size: 18px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+  box-shadow: 
+    0 2px 8px rgba(255, 204, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
   transition: all 0.2s;
+  font-weight: bold;
 }
 
 .expandBtn:hover {
   transform: scale(1.1);
-  background: rgba(0, 128, 255, 1);
+  background: linear-gradient(135deg, #ffdd00 0%, #ffcc00 100%);
+  box-shadow: 
+    0 4px 12px rgba(255, 204, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.fullscreenToggleBtn {
+  bottom: 60px;
+  font-size: 20px;
+}
+
+.fullscreenToggleBtn:hover {
+  background: linear-gradient(135deg, #ffdd00 0%, #ffcc00 100%);
 }
 
 .analysisOverlay {
@@ -289,19 +383,23 @@ video, .processedImage {
 
 .videoInfo {
   font-size: 11px;
-  color: #BDBDBD;
+  color: #999;
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 204, 0, 0.1);
 }
 
 .statusLive {
-  color: #4CAF50;
+  color: #ffcc00;
+  font-weight: 600;
 }
 
 .processingType {
-  color: #FF9800;
+  color: #ffcc00;
+  font-weight: 600;
 }
 
 .objectCount, .frameCount {
@@ -339,14 +437,26 @@ video, .processedImage {
 }
 
 .statLabel {
-  color: #FF9800;
+  color: #ffcc00;
   font-size: 9px;
+  font-weight: 600;
 }
 
 .statValue {
-  color: white;
+  color: #ffcc00;
   font-weight: bold;
   font-size: 12px;
+}
+
+.beltSpeedValue {
+  color: #ffcc00;
+  font-weight: 600;
+  font-family: 'Courier New', monospace;
+}
+
+.alignmentValue {
+  font-weight: 600;
+  font-family: 'Courier New', monospace;
 }
 
 /* Camera Controls */
@@ -366,35 +476,52 @@ video, .processedImage {
 }
 
 .videoSelection {
-  background: #37474F;
-  padding: 10px;
-  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 12px;
+  border-radius: 8px;
   flex: 1;
   min-width: 250px;
+  border: 1px solid rgba(255, 204, 0, 0.2);
 }
 
 .videoSelection label {
   font-size: 12px;
-  color: #BDBDBD;
-  margin-bottom: 5px;
+  color: #ffcc00;
+  margin-bottom: 8px;
   display: block;
+  font-weight: 600;
 }
 
 .videoSelection select {
   width: 100%;
-  padding: 8px;
-  background: #263238;
-  color: white;
-  border: 1px solid #455A64;
-  border-radius: 4px;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #ffcc00;
+  border: 1px solid rgba(255, 204, 0, 0.3);
+  border-radius: 6px;
   font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.videoSelection select:hover {
+  border-color: rgba(255, 204, 0, 0.5);
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.videoSelection select:focus {
+  outline: none;
+  border-color: #ffcc00;
+  box-shadow: 0 0 0 2px rgba(255, 204, 0, 0.2);
 }
 
 .noVideos {
   font-size: 12px;
-  color: #FF9800;
-  margin-top: 5px;
+  color: #ffcc00;
+  margin-top: 8px;
   text-align: center;
+  font-weight: 500;
 }
 
 .actionBtn {

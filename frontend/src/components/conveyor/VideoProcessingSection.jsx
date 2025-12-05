@@ -19,9 +19,10 @@ export default function VideoProcessingSection({
   processingFPS = 2,
   frameCount = 0,
   currentFPS = 0,
-  processingStatus = null,
-  processedVideoUrl = null,
-  processingProgress = 0
+            processingStatus = null,
+            processedVideoUrl = null,
+            processingProgress = 0,
+            isProcessingProp = false
 }) {
   const processedVideoRef = useRef(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -30,22 +31,59 @@ export default function VideoProcessingSection({
   const [showProcessedVideo, setShowProcessedVideo] = useState(false);
   const [streamingMode, setStreamingMode] = useState('frames');
 
+  // Track if we've already auto-started after processing completes
+  const autoStartedRef = useRef(false);
+
   // Reset when processing starts
   useEffect(() => {
-    if (processingStatus?.active_jobs > 0) {
+    // Check if processingStatus is an object with active_jobs property
+    const activeJobs = typeof processingStatus === 'object' && processingStatus !== null 
+      ? processingStatus.active_jobs 
+      : (isProcessingProp ? 1 : 0);
+    const completedJobs = typeof processingStatus === 'object' && processingStatus !== null
+      ? processingStatus.completed_jobs
+      : 0;
+
+    if (activeJobs > 0 || isProcessingProp) {
       setIsProcessing(true);
       setProcessedFrames([]);
       setCurrentFrameIndex(0);
       setShowProcessedVideo(false);
       setStreamingMode('frames');
-    } else if (processingStatus?.active_jobs === 0 && processingStatus?.completed_jobs > 0) {
+      autoStartedRef.current = false; // Reset flag when processing starts
+    } else if (activeJobs === 0 && completedJobs > 0 && !autoStartedRef.current) {
       setIsProcessing(false);
+      autoStartedRef.current = true; // Mark as auto-started
+      
+      // After processing completes, automatically start capturing frames if video is available
+      if (videoRef && videoRef.current && toggleVideoProcessing) {
+        // Small delay to ensure video is ready, then start processing
+        const timeoutId = setTimeout(() => {
+          // Only start if not already processing and video is ready
+          if (!showProcessedFeed && videoRef.current && videoRef.current.readyState >= 2) {
+            console.log('Auto-starting frame capture after video processing completes');
+            toggleVideoProcessing();
+          } else if (videoRef.current && videoRef.current.readyState < 2) {
+            // Wait for video to be ready
+            const checkReady = setInterval(() => {
+              if (videoRef.current && videoRef.current.readyState >= 2 && !showProcessedFeed) {
+                console.log('Video ready, auto-starting frame capture');
+                toggleVideoProcessing();
+                clearInterval(checkReady);
+              }
+            }, 200);
+            // Clear interval after 5 seconds if video doesn't become ready
+            setTimeout(() => clearInterval(checkReady), 5000);
+          }
+        }, 1000);
+        return () => clearTimeout(timeoutId);
+      }
       if (processedVideoUrl) {
         setStreamingMode('video');
         setShowProcessedVideo(true);
       }
     }
-  }, [processingStatus, processedVideoUrl]);
+  }, [processingStatus, processedVideoUrl, videoRef, showProcessedFeed, toggleVideoProcessing, isProcessingProp]);
 
   // Handle incoming processed frames
   useEffect(() => {
@@ -76,23 +114,40 @@ export default function VideoProcessingSection({
     }
   }, [showProcessedVideo, processedVideoUrl]);
 
-  // Animate through frames
+  // Animate through frames - optimized for smooth video-like streaming
   useEffect(() => {
-    if (!showProcessedFeed || streamingMode !== 'frames' || processedFrames.length < 2) {
+    if (!showProcessedFeed || streamingMode !== 'frames' || processedFrames.length < 1) {
       return;
     }
 
-    const targetInterval = 1000 / Math.max(1, currentFPS || processingFPS);
-    console.log(`Animating frames at ${targetInterval}ms interval, ${processedFrames.length} frames available`);
-
-    const interval = setInterval(() => {
-      setCurrentFrameIndex(prev => {
-        const nextIndex = (prev + 1) % processedFrames.length;
-        return nextIndex;
-      });
-    }, targetInterval);
-
-    return () => clearInterval(interval);
+    // Use requestAnimationFrame for smoother animation
+    let animationFrameId;
+    let lastFrameTime = performance.now();
+    
+    const animate = (currentTime) => {
+      const targetFPS = Math.max(1, currentFPS || processingFPS);
+      const targetInterval = 1000 / targetFPS;
+      const elapsed = currentTime - lastFrameTime;
+      
+      if (elapsed >= targetInterval && processedFrames.length > 0) {
+        setCurrentFrameIndex(prev => {
+          // Cycle through frames smoothly
+          const nextIndex = (prev + 1) % processedFrames.length;
+          return nextIndex;
+        });
+        lastFrameTime = currentTime - (elapsed % targetInterval);
+      }
+      
+      animationFrameId = requestAnimationFrame(animate);
+    };
+    
+    animationFrameId = requestAnimationFrame(animate);
+    
+    return () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+    };
   }, [showProcessedFeed, streamingMode, processedFrames.length, currentFPS, processingFPS]);
 
   // Get current frame for display
@@ -384,16 +439,102 @@ export default function VideoProcessingSection({
                 </div>
               )}
 
-              {/* Frame mode */}
+              {/* Frame mode - optimized for fast streaming with bounding boxes */}
               {streamingMode === 'frames' && currentDisplayFrame && (
-                <img
-                  src={currentDisplayFrame}
-                  alt="Processed Feed"
-                  className={styles.processedImage}
-                  crossOrigin="anonymous"
-                  onLoad={() => console.log('Processed frame loaded')}
-                  onError={(e) => console.error('Processed frame error:', e)}
-                />
+                <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+                  <img
+                    src={currentDisplayFrame}
+                    alt="Processed Feed"
+                    className={styles.processedImage}
+                    crossOrigin="anonymous"
+                    style={{
+                      imageRendering: 'auto',
+                      willChange: 'contents',
+                      display: 'block',
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                    }}
+                    onLoad={(e) => {
+                      // Draw bounding boxes overlay after image loads
+                      // Note: Bounding boxes are already drawn on the canvas in useVideoProcessing
+                      // This overlay is a backup if analysisResults is available separately
+                      const img = e.target;
+                      const container = img.parentElement;
+                      
+                      // Only draw overlay if analysisResults has objects and image doesn't already have boxes
+                      if (container && analysisResults?.objects && analysisResults.objects.length > 0) {
+                        // Remove existing overlay canvas if any
+                        const existingCanvas = container.querySelector('.bounding-box-overlay');
+                        if (existingCanvas) {
+                          existingCanvas.remove();
+                        }
+                        
+                        // Create canvas overlay for bounding boxes (as backup/alternative)
+                        const canvas = document.createElement('canvas');
+                        canvas.className = 'bounding-box-overlay';
+                        canvas.style.position = 'absolute';
+                        canvas.style.top = '0';
+                        canvas.style.left = '0';
+                        canvas.style.width = '100%';
+                        canvas.style.height = '100%';
+                        canvas.style.pointerEvents = 'none';
+                        canvas.style.zIndex = '10';
+                        
+                        // Set canvas size to match image natural size
+                        const imgWidth = img.naturalWidth || img.width || 640;
+                        const imgHeight = img.naturalHeight || img.height || 480;
+                        canvas.width = imgWidth;
+                        canvas.height = imgHeight;
+                        
+                        const ctx = canvas.getContext('2d');
+                        
+                        // Draw green bounding boxes for each detected object
+                        analysisResults.objects.forEach((obj, index) => {
+                          if (obj.bbox && Array.isArray(obj.bbox) && obj.bbox.length >= 4) {
+                            const [x1, y1, x2, y2] = obj.bbox;
+                            const width = x2 - x1;
+                            const height = y2 - y1;
+                            
+                            // Draw green bounding box with thick line (Caterpillar style)
+                            ctx.strokeStyle = '#00FF00'; // Bright green
+                            ctx.lineWidth = 4;
+                            ctx.setLineDash([]);
+                            ctx.strokeRect(x1, y1, width, height);
+                            
+                            // Draw semi-transparent green fill for better visibility
+                            ctx.fillStyle = 'rgba(0, 255, 0, 0.1)';
+                            ctx.fillRect(x1, y1, width, height);
+                            
+                            // Draw label with confidence
+                            if (obj.confidence !== undefined) {
+                              const label = `Iron Ore ${obj.id || index + 1} (${Math.round(obj.confidence * 100)}%)`;
+                              const labelWidth = ctx.measureText(label).width + 8;
+                              ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+                              ctx.fillRect(x1, Math.max(0, y1 - 22), labelWidth, 20);
+                              ctx.fillStyle = '#00FF00';
+                              ctx.font = 'bold 12px Arial';
+                              ctx.fillText(label, x1 + 4, Math.max(12, y1 - 6));
+                            }
+                          }
+                        });
+                        
+                        container.appendChild(canvas);
+                      }
+                      
+                      // Preload next frame for smoother transition
+                      if (processedFrames.length > 1) {
+                        const nextIndex = (currentFrameIndex + 1) % processedFrames.length;
+                        const nextFrame = processedFrames[nextIndex];
+                        if (nextFrame) {
+                          const preloadImg = new Image();
+                          preloadImg.src = nextFrame;
+                        }
+                      }
+                    }}
+                    onError={(e) => console.error('Processed frame error:', e)}
+                  />
+                </div>
               )}
 
               {/* Loading/Placeholder */}
@@ -436,12 +577,12 @@ export default function VideoProcessingSection({
                 </div>
               )}
 
-              {/* Analysis Overlays */}
+              {/* Analysis Overlays - Iron Ore Detection */}
               {analysisResults && currentDisplayFrame && (
                 <>
                   <div className={`${styles.analysisOverlay} ${styles.topLeft}`}>
-                    <span>🔍</span>
-                    Objects: {analysisResults.object_count || analysisResults.objects?.length || 0}
+                    <span>⚫</span>
+                    Iron Ore: {analysisResults.object_count || analysisResults.objects?.length || 0}
                   </div>
                   <div className={`${styles.analysisOverlay} ${styles.topRight}`}>
                     <div className={styles.confidenceValue}>
@@ -450,6 +591,29 @@ export default function VideoProcessingSection({
                     <div className={styles.confidenceLabel}>Confidence</div>
                   </div>
                 </>
+              )}
+
+              {/* Fullscreen Toggle Button */}
+              {currentDisplayFrame && (
+                <button
+                  className={`${styles.expandBtn} ${styles.fullscreenToggleBtn}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const container = e.target.closest(`.${styles.videoCard}`)?.querySelector(`.${styles.videoContainer}`);
+                    if (container) {
+                      if (!document.fullscreenElement) {
+                        container.requestFullscreen().catch(err => {
+                          console.error('Error attempting to enable fullscreen:', err);
+                        });
+                      } else {
+                        document.exitFullscreen();
+                      }
+                    }
+                  }}
+                  title="Toggle Fullscreen"
+                >
+                  ⛶
+                </button>
               )}
 
               {/* Mode toggle button */}
@@ -497,12 +661,44 @@ export default function VideoProcessingSection({
               </div>
             </div>
 
-            {/* Stats */}
+            {/* Iron Ore Analysis Stats */}
             <div className={styles.analysisStats}>
               <div className={styles.statItem}>
-                <div className={styles.statLabel}>OBJECTS</div>
+                <div className={styles.statLabel}>IRON ORE</div>
                 <div className={styles.statValue}>
                   {analysisResults?.object_count || analysisResults?.objects?.length || 0}
+                </div>
+              </div>
+              <div className={styles.statItem}>
+                <div className={styles.statLabel}>BELT SPEED</div>
+                <div className={styles.statValue}>
+                  {analysisResults?.belt_speed ? `${analysisResults.belt_speed.toFixed(2)} m/s` : 
+                   analysisResults?.current_speed ? `${analysisResults.current_speed.toFixed(2)} m/s` : '--'}
+                </div>
+              </div>
+              <div className={styles.statItem}>
+                <div className={styles.statLabel}>WEIGHT</div>
+                <div className={styles.statValue}>
+                  {analysisResults?.total_weight ? `${analysisResults.total_weight.toFixed(1)} kg` :
+                   analysisResults?.total_area ? `${(analysisResults.total_area / 1000).toFixed(1)} kg` : '--'}
+                </div>
+              </div>
+              <div className={styles.statItem}>
+                <div className={styles.statLabel}>OVERWEIGHT</div>
+                <div className={styles.statValue} style={{
+                  color: analysisResults?.overweight_detected ? '#ff0000' : '#ffcc00'
+                }}>
+                  {analysisResults?.overweight_detected ? '⚠️ YES' : '✓ NO'}
+                </div>
+              </div>
+              <div className={styles.statItem}>
+                <div className={styles.statLabel}>DISALIGNMENT</div>
+                <div className={styles.statValue} style={{
+                  color: analysisResults?.deviation_percentage > 20 ? '#ff0000' : 
+                         analysisResults?.deviation_percentage > 10 ? '#ffaa00' : '#ffcc00'
+                }}>
+                  {analysisResults?.deviation_percentage !== undefined ? 
+                   `${analysisResults.deviation_percentage.toFixed(1)}%` : '--'}
                 </div>
               </div>
               <div className={styles.statItem}>
@@ -510,14 +706,6 @@ export default function VideoProcessingSection({
                 <div className={styles.statValue}>
                   {analysisResults?.confidence ? `${Math.round(analysisResults.confidence * 100)}%` : '--%'}
                 </div>
-              </div>
-              <div className={styles.statItem}>
-                <div className={styles.statLabel}>FRAMES</div>
-                <div className={styles.statValue}>{frameCount}</div>
-              </div>
-              <div className={styles.statItem}>
-                <div className={styles.statLabel}>BUFFER</div>
-                <div className={styles.statValue}>{processedFrames.length}</div>
               </div>
             </div>
           </div>
@@ -565,7 +753,17 @@ export default function VideoProcessingSection({
 
         <button
           className={`${styles.actionBtn} ${styles.processBtn}`}
-          onClick={processVideoFile}
+          onClick={async () => {
+            // Process the video file
+            await processVideoFile();
+            // Automatically start AI processing to show frames immediately
+            if (!showProcessedFeed && toggleVideoProcessing) {
+              // Small delay to ensure video processing has started
+              setTimeout(() => {
+                toggleVideoProcessing();
+              }, 500);
+            }
+          }}
           disabled={!selectedVideoPath || isProcessing}
         >
           {isProcessing ? (

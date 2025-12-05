@@ -296,6 +296,8 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
             processingFPS={processingFPS}
             frameCount={frameCount}
             currentFPS={currentFPS}
+            processingStatus={processingStatus}
+            isProcessingProp={isProcessing}
           />
         )}
 

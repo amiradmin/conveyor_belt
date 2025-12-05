@@ -184,18 +184,60 @@ export const useVideoProcessing = ({
               // Draw video frame
               processedCtx.drawImage(video, 0, 0, processedCanvas.width, processedCanvas.height);
 
-              // Simple overlay (faster than complex drawing)
-              const objectCount = response.data.object_count || 0;
+              // Draw bounding boxes for detected objects with green contours
+              const objects = response.data.objects || [];
+              const objectCount = response.data.object_count || objects.length || 0;
+              
+              if (objects.length > 0) {
+                // Draw green bounding boxes for each detected object
+                objects.forEach((obj, index) => {
+                  if (obj.bbox && Array.isArray(obj.bbox) && obj.bbox.length >= 4) {
+                    const [x1, y1, x2, y2] = obj.bbox;
+                    const width = x2 - x1;
+                    const height = y2 - y1;
+                    
+                    // Draw green bounding box with thicker line
+                    processedCtx.strokeStyle = '#00FF00'; // Bright green
+                    processedCtx.lineWidth = 3;
+                    processedCtx.setLineDash([]);
+                    processedCtx.strokeRect(x1, y1, width, height);
+                    
+                    // Draw filled rectangle with transparency for better visibility
+                    processedCtx.fillStyle = 'rgba(0, 255, 0, 0.1)';
+                    processedCtx.fillRect(x1, y1, width, height);
+                    
+                            // Draw Iron Ore label with confidence if available
+                            if (obj.confidence !== undefined) {
+                              const label = `Iron Ore ${obj.id || index + 1} (${Math.round(obj.confidence * 100)}%)`;
+                              processedCtx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                              processedCtx.fillRect(x1, y1 - 20, label.length * 7, 18);
+                              processedCtx.fillStyle = '#00FF00';
+                              processedCtx.font = 'bold 12px Arial';
+                              processedCtx.fillText(label, x1 + 4, y1 - 6);
+                            }
+                  }
+                });
+              }
+              
+              // Draw Iron Ore count overlay
               if (objectCount > 0) {
-                processedCtx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-                processedCtx.fillRect(10, 10, 120, 40);
-                processedCtx.fillStyle = '#4CAF50';
-                processedCtx.font = 'bold 14px Arial';
-                processedCtx.fillText(`${objectCount} objects`, 15, 30);
+                processedCtx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                processedCtx.fillRect(10, 10, 180, 35);
+                processedCtx.fillStyle = '#00FF00';
+                processedCtx.font = 'bold 16px Arial';
+                processedCtx.fillText(`${objectCount} Iron Ore detected`, 15, 32);
               }
 
-              const processedDataUrl = processedCanvas.toDataURL('image/jpeg', 0.7); // Lower quality for speed
+              const processedDataUrl = processedCanvas.toDataURL('image/jpeg', 0.9); // High quality to see boxes clearly
               if (setProcessedFrame) setProcessedFrame(processedDataUrl);
+              
+              // Also store the analysis data with the frame for overlay drawing
+              if (setAnalysisResults) {
+                setAnalysisResults({
+                  ...analysisData,
+                  frameImage: processedDataUrl // Store frame URL with analysis
+                });
+              }
 
               // Update FPS counter
               fpsCounterRef.current.frames++;

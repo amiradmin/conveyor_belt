@@ -88,10 +88,12 @@ export const useBeltData = ({
         const activeJobs = response.data.active_jobs || 0;
         const completedJobs = response.data.completed_jobs || 0;
 
+        // Set processingStatus to the full response object so we can access active_jobs and completed_jobs
+        setProcessingStatus(response.data);
+
         if (activeJobs > 0) {
-          setProcessingStatus(`Processing... ${activeJobs} active job(s)`);
+          // Keep string status for display, but also store the object
         } else if (completedJobs > 0) {
-          setProcessingStatus(`✅ Completed ${completedJobs} job(s)`);
 
           // Get job details
           if (response.data.jobs?.length > 0) {

@@ -1,60 +1,102 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
-  Grid2 as Grid, // تغییر اینجا - استفاده از Grid2
+  Grid2 as Grid,
   Paper,
   Typography,
   Card,
   CardContent,
-  CardHeader,
-  IconButton,
-  Button,
   Chip,
   Stack,
-  Divider,
 } from '@mui/material';
 import {
-  Refresh as RefreshIcon,
+  Speed as SpeedIcon,
+  CheckCircle as CheckIcon,
+  Warning as WarningIcon,
+  Error as ErrorIcon,
   PlayCircle as PlayIcon,
   Pause as PauseIcon,
-  Warning as WarningIcon,
-  CheckCircle as CheckIcon,
-  Error as ErrorIcon,
-  Speed as SpeedIcon,
-  TrendingUp as TrendingUpIcon,
 } from '@mui/icons-material';
-import { LineChart } from '@mui/x-charts/LineChart';
-import BeltCard from '../components/belts/BeltCard';
-import { conveyorBelts, systemMetrics, alarmHistory } from '../data/sampleData';
+import { conveyorBelts, systemMetrics } from '../data/sampleData';
+import './MainDashboard.css';
 
 function MainDashboard() {
+  const navigate = useNavigate();
   const runningBelts = conveyorBelts.filter(b => b.status === 'running').length;
   const warningBelts = conveyorBelts.filter(b => b.status === 'warning').length;
   const alarmBelts = conveyorBelts.filter(b => b.status === 'alarm').length;
 
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'running':
+        return '#ffcc00';
+      case 'warning':
+        return '#ffaa00';
+      case 'alarm':
+        return '#ff0000';
+      case 'stopped':
+        return '#666';
+      default:
+        return '#999';
+    }
+  };
+
+  const getStatusIcon = (status) => {
+    switch (status) {
+      case 'running':
+        return <PlayIcon sx={{ fontSize: 20 }} />;
+      case 'warning':
+        return <WarningIcon sx={{ fontSize: 20 }} />;
+      case 'alarm':
+        return <ErrorIcon sx={{ fontSize: 20 }} />;
+      case 'stopped':
+        return <PauseIcon sx={{ fontSize: 20 }} />;
+      default:
+        return <PauseIcon sx={{ fontSize: 20 }} />;
+    }
+  };
+
+  const getStatusText = (status) => {
+    switch (status) {
+      case 'running':
+        return 'فعال';
+      case 'warning':
+        return 'هشدار';
+      case 'alarm':
+        return 'خطا';
+      case 'stopped':
+        return 'متوقف';
+      default:
+        return 'نامشخص';
+    }
+  };
+
   return (
-    <Box>
-      {/* هدر */}
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" gutterBottom sx={{ fontFamily: 'Vazirmatn', fontWeight: 700 }}>
-          کنترل روم عملیات - فولاد شادگان
-        </Typography>
-        <Typography variant="body1" color="text.secondary" sx={{ fontFamily: 'Vazirmatn' }}>
-          سیستم نظارت لحظه‌ای بر ۶ نوار نقاله اصلی
-        </Typography>
+    <Box className="main-dashboard">
+      {/* Header */}
+      <Box className="dashboard-header">
+        <Box>
+          <Typography variant="h4" className="dashboard-title">
+            کنترل روم عملیات - فولاد شادگان
+          </Typography>
+          <Typography variant="body1" className="dashboard-subtitle">
+            سیستم نظارت لحظه‌ای بر ۶ نوار نقاله اصلی
+          </Typography>
+        </Box>
       </Box>
 
-      {/* متریک‌های کلی */}
+      {/* Summary Metrics */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}> {/* تغییر اینجا */}
-          <Paper sx={{ p: 3, textAlign: 'center' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 2 }}>
-              <SpeedIcon sx={{ fontSize: 40, color: 'primary.main', ml: 1 }} />
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+          <Paper className="metric-card">
+            <Box className="metric-content">
+              <SpeedIcon className="metric-icon" />
               <Box>
-                <Typography variant="h4" sx={{ fontFamily: 'Vazirmatn', fontWeight: 700 }}>
+                <Typography variant="h4" className="metric-value">
                   {systemMetrics.totalThroughput}
                 </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'Vazirmatn' }}>
+                <Typography variant="body2" className="metric-label">
                   خروجی کل ({systemMetrics.throughputUnit})
                 </Typography>
               </Box>
@@ -62,15 +104,15 @@ function MainDashboard() {
           </Paper>
         </Grid>
 
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}> {/* تغییر اینجا */}
-          <Paper sx={{ p: 3, textAlign: 'center' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 2 }}>
-              <CheckIcon sx={{ fontSize: 40, color: 'success.main', ml: 1 }} />
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+          <Paper className="metric-card">
+            <Box className="metric-content">
+              <CheckIcon className="metric-icon active" />
               <Box>
-                <Typography variant="h4" sx={{ fontFamily: 'Vazirmatn', fontWeight: 700, color: 'success.main' }}>
+                <Typography variant="h4" className="metric-value active">
                   {runningBelts}/۶
                 </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'Vazirmatn' }}>
+                <Typography variant="body2" className="metric-label">
                   نوارهای فعال
                 </Typography>
               </Box>
@@ -78,15 +120,15 @@ function MainDashboard() {
           </Paper>
         </Grid>
 
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}> {/* تغییر اینجا */}
-          <Paper sx={{ p: 3, textAlign: 'center' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 2 }}>
-              <WarningIcon sx={{ fontSize: 40, color: 'warning.main', ml: 1 }} />
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+          <Paper className="metric-card">
+            <Box className="metric-content">
+              <WarningIcon className="metric-icon warning" />
               <Box>
-                <Typography variant="h4" sx={{ fontFamily: 'Vazirmatn', fontWeight: 700, color: 'warning.main' }}>
+                <Typography variant="h4" className="metric-value warning">
                   {systemMetrics.activeAlarms}
                 </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'Vazirmatn' }}>
+                <Typography variant="body2" className="metric-label">
                   آلارم‌های فعال
                 </Typography>
               </Box>
@@ -94,15 +136,15 @@ function MainDashboard() {
           </Paper>
         </Grid>
 
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}> {/* تغییر اینجا */}
-          <Paper sx={{ p: 3, textAlign: 'center' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 2 }}>
-              <TrendingUpIcon sx={{ fontSize: 40, color: 'info.main', ml: 1 }} />
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+          <Paper className="metric-card">
+            <Box className="metric-content">
+              <SpeedIcon className="metric-icon" />
               <Box>
-                <Typography variant="h4" sx={{ fontFamily: 'Vazirmatn', fontWeight: 700 }}>
+                <Typography variant="h4" className="metric-value">
                   {systemMetrics.efficiency}%
                 </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'Vazirmatn' }}>
+                <Typography variant="body2" className="metric-label">
                   بازدهی سیستم
                 </Typography>
               </Box>
@@ -111,193 +153,111 @@ function MainDashboard() {
         </Grid>
       </Grid>
 
-      {/* چارت */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid size={{ xs: 12, md: 8 }}> {/* تغییر اینجا */}
-          <Card>
-            <CardHeader
-              title="نمودار سرعت نوارها در ۲۴ ساعت گذشته"
-              sx={{ fontFamily: 'Vazirmatn', textAlign: 'right' }}
-              action={
-                <IconButton>
-                  <RefreshIcon />
-                </IconButton>
-              }
-            />
-            <CardContent sx={{ height: 300 }}>
-              <LineChart
-                xAxis={[{ data: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] }]}
-                series={[
-                  {
-                    data: [2, 3, 2.5, 4, 3.5, 3, 4, 3.8, 3.2, 2.8, 3.5, 4.2],
-                    label: 'نوار #۱',
-                    color: '#00bcd4',
-                  },
-                  {
-                    data: [1.5, 2, 1.8, 2.5, 2.2, 1.9, 2.8, 2.5, 2, 1.8, 2.2, 2.5],
-                    label: 'نوار #۲',
-                    color: '#ff9800',
-                  },
-                  {
-                    data: [3, 3.2, 2.8, 3.5, 3.3, 3, 3.8, 3.5, 3.2, 3, 3.5, 3.8],
-                    label: 'نوار #۳',
-                    color: '#4caf50',
-                  },
-                ]}
-              />
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* آلارم‌ها */}
-        <Grid size={{ xs: 12, md: 4 }}> {/* تغییر اینجا */}
-          <Card sx={{ height: '100%' }}>
-            <CardHeader
-              title="آلارم‌های اخیر"
-              sx={{ fontFamily: 'Vazirmatn', textAlign: 'right' }}
-              action={
-                <Chip
-                  label={alarmHistory.filter(a => !a.acknowledged).length + " جدید"}
-                  color="error"
-                  size="small"
-                  sx={{ fontFamily: 'Vazirmatn' }}
-                />
-              }
-            />
-            <CardContent>
-              <Stack spacing={2}>
-                {alarmHistory.slice(0, 5).map((alarm) => (
-                  <Paper
-                    key={alarm.id}
-                    sx={{
-                      p: 2,
-                      borderRight: alarm.type === 'critical' ? '4px solid #f44336' :
-                                  alarm.type === 'warning' ? '4px solid #ff9800' :
-                                  '4px solid #2196f3',
-                      bgcolor: 'rgba(255, 255, 255, 0.05)',
-                    }}
-                  >
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                      <Typography variant="body2" sx={{ fontFamily: 'Vazirmatn', fontWeight: 500 }}>
-                        نوار #{alarm.beltId}
-                      </Typography>
-                      <Chip
-                        label={alarm.type === 'critical' ? 'بحرانی' : alarm.type === 'warning' ? 'هشدار' : 'اطلاع'}
-                        size="small"
-                        color={alarm.type === 'critical' ? 'error' : alarm.type === 'warning' ? 'warning' : 'info'}
-                        sx={{ fontFamily: 'Vazirmatn', fontSize: '0.7rem' }}
-                      />
-                    </Box>
-                    <Typography variant="body2" sx={{ fontFamily: 'Vazirmatn', mb: 1 }}>
-                      {alarm.message}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'Vazirmatn' }}>
-                      {alarm.time}
-                    </Typography>
-                  </Paper>
-                ))}
-              </Stack>
-              <Button
-                fullWidth
-                variant="outlined"
-                sx={{ mt: 2, fontFamily: 'Vazirmatn' }}
-              >
-                مشاهده همه آلارم‌ها
-              </Button>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
-      {/* نوارهای نقاله */}
-      <Box sx={{ mb: 4 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Typography variant="h5" sx={{ fontFamily: 'Vazirmatn', fontWeight: 600 }}>
+      {/* Belts Grid */}
+      <Box className="belts-section">
+        <Box className="belts-header">
+          <Typography variant="h5" className="belts-title">
             نوارهای نقاله
           </Typography>
-          <Box>
+          <Box className="status-chips">
             <Chip
               icon={<CheckIcon />}
               label={`${runningBelts} فعال`}
-              color="success"
-              variant="outlined"
-              sx={{ ml: 1, fontFamily: 'Vazirmatn' }}
+              className="status-chip active-chip"
             />
             <Chip
               icon={<WarningIcon />}
               label={`${warningBelts} هشدار`}
-              color="warning"
-              variant="outlined"
-              sx={{ ml: 1, fontFamily: 'Vazirmatn' }}
+              className="status-chip warning-chip"
             />
             <Chip
               icon={<ErrorIcon />}
               label={`${alarmBelts} خطا`}
-              color="error"
-              variant="outlined"
-              sx={{ ml: 1, fontFamily: 'Vazirmatn' }}
+              className="status-chip error-chip"
             />
           </Box>
         </Box>
 
         <Grid container spacing={3}>
           {conveyorBelts.map((belt) => (
-            <Grid size={{ xs: 12, sm: 6, md: 4 }} key={belt.id}> {/* تغییر اینجا */}
-              <BeltCard belt={belt} />
+            <Grid size={{ xs: 12, sm: 6, md: 4 }} key={belt.id}>
+              <Card 
+                className="belt-card"
+                onClick={() => navigate('/simulator')}
+                sx={{ cursor: 'pointer' }}
+              >
+                <CardContent>
+                  <Box className="belt-card-header">
+                    <Box className="belt-info">
+                      <Typography variant="h6" className="belt-name">
+                        نوار #{belt.id}
+                      </Typography>
+                      <Typography variant="body2" className="belt-description">
+                        {belt.name}
+                      </Typography>
+                    </Box>
+                    <Box 
+                      className="belt-status-badge"
+                      sx={{ 
+                        backgroundColor: getStatusColor(belt.status),
+                        color: belt.status === 'running' ? '#000' : '#fff'
+                      }}
+                    >
+                      {getStatusIcon(belt.status)}
+                      <Typography variant="caption" sx={{ ml: 0.5, fontWeight: 700 }}>
+                        {getStatusText(belt.status)}
+                      </Typography>
+                    </Box>
+                  </Box>
+
+                  <Box className="belt-metrics">
+                    <Box className="belt-metric-item">
+                      <SpeedIcon className="metric-small-icon" />
+                      <Box>
+                        <Typography variant="caption" className="metric-small-label">
+                          سرعت
+                        </Typography>
+                        <Typography variant="body2" className="metric-small-value">
+                          {belt.speed} {belt.speedUnit}
+                        </Typography>
+                      </Box>
+                    </Box>
+                    <Box className="belt-metric-item">
+                      <Box>
+                        <Typography variant="caption" className="metric-small-label">
+                          بار
+                        </Typography>
+                        <Typography variant="body2" className="metric-small-value">
+                          {belt.load}{belt.loadUnit}
+                        </Typography>
+                      </Box>
+                    </Box>
+                    <Box className="belt-metric-item">
+                      <Box>
+                        <Typography variant="caption" className="metric-small-label">
+                          دما
+                        </Typography>
+                        <Typography variant="body2" className="metric-small-value">
+                          {belt.temperature}{belt.temperatureUnit}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </Box>
+
+                  {belt.alarms && belt.alarms.length > 0 && (
+                    <Box className="belt-alarms">
+                      <WarningIcon sx={{ fontSize: 16, color: '#ffcc00' }} />
+                      <Typography variant="caption" className="alarm-count">
+                        {belt.alarms.length} آلارم
+                      </Typography>
+                    </Box>
+                  )}
+                </CardContent>
+              </Card>
             </Grid>
           ))}
         </Grid>
       </Box>
-
-      {/* کنترل‌های سریع */}
-      <Paper sx={{ p: 3 }}>
-        <Typography variant="h6" gutterBottom sx={{ fontFamily: 'Vazirmatn', fontWeight: 600 }}>
-          کنترل‌های سریع
-        </Typography>
-        <Divider sx={{ mb: 3 }} />
-        <Grid container spacing={2}>
-          <Grid size={{ xs: 6, md: 3 }}> {/* تغییر اینجا */}
-            <Button
-              fullWidth
-              variant="contained"
-              startIcon={<PlayIcon />}
-              color="success"
-              sx={{ fontFamily: 'Vazirmatn' }}
-            >
-              راه‌اندازی همه
-            </Button>
-          </Grid>
-          <Grid size={{ xs: 6, md: 3 }}> {/* تغییر اینجا */}
-            <Button
-              fullWidth
-              variant="contained"
-              startIcon={<PauseIcon />}
-              color="warning"
-              sx={{ fontFamily: 'Vazirmatn' }}
-            >
-              توقف اضطراری
-            </Button>
-          </Grid>
-          <Grid size={{ xs: 6, md: 3 }}> {/* تغییر اینجا */}
-            <Button
-              fullWidth
-              variant="outlined"
-              sx={{ fontFamily: 'Vazirmatn' }}
-            >
-              گزارش روزانه
-            </Button>
-          </Grid>
-          <Grid size={{ xs: 6, md: 3 }}> {/* تغییر اینجا */}
-            <Button
-              fullWidth
-              variant="outlined"
-              sx={{ fontFamily: 'Vazirmatn' }}
-            >
-              تنظیمات سیستم
-            </Button>
-          </Grid>
-        </Grid>
-      </Paper>
     </Box>
   );
 }
