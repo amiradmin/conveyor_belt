@@ -1,43 +1,32 @@
 // src/components/conveyor/LogPanel.jsx
 import React from 'react';
+import './LogPanel.css';
 
 export default function LogPanel({ log, onClearLog }) {
   return (
-    <div style={{
-      background: '#f5f5f5',
-      padding: '15px',
-      borderRadius: '8px',
-      maxHeight: '200px',
-      overflow: 'auto'
-    }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-        <h4 style={{ margin: 0,color:'black' }}>Event Log</h4>
+    <div className="log-panel">
+      <div className="log-panel-header">
+        <div className="log-panel-title">
+          <div className="log-panel-icon">📋</div>
+          <h4>گزارش رویدادها</h4>
+        </div>
         <button
           onClick={onClearLog}
-          style={{
-            background: '#666',
-            color: 'white',
-            border: 'none',
-            padding: '5px 10px',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontSize: '11px'
-          }}
+          className="clear-log-btn"
         >
-          Clear Log
+          <span>🗑️</span>
+          <span>پاک کردن</span>
         </button>
       </div>
-      <div style={{ fontFamily: 'monospace', fontSize: '12px' }}>
+      <div className="log-content">
         {log.map((entry, i) => (
-          <div key={i} style={{
-            padding: '4px 0',
-            borderBottom: i < log.length - 1 ? '1px solid #ddd' : 'none', color:'black'
-          }}>
-            {entry}
+          <div key={i} className={`log-entry ${i === 0 ? 'latest' : ''}`}>
+            <span className="log-timestamp">{entry.match(/\[(.*?)\]/)?.[1] || ''}</span>
+            <span className="log-message">{entry.replace(/\[.*?\]\s*/, '')}</span>
           </div>
         ))}
         {log.length === 0 && (
-          <div style={{ color: '#999', fontStyle: 'italic' }}>No events yet</div>
+          <div className="log-empty">هیچ رویدادی ثبت نشده است</div>
         )}
       </div>
     </div>

@@ -60,14 +60,21 @@ function MainLayout() {
 
   const drawer = (
     <div>
-      <Toolbar sx={{ justifyContent: 'center', py: 2 }}>
+      <Toolbar sx={{ 
+        justifyContent: 'center', 
+        py: 2,
+        background: 'linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%)',
+        borderBottom: '1px solid rgba(255, 204, 0, 0.2)'
+      }}>
         <Avatar
           sx={{
             width: 60,
             height: 60,
-            bgcolor: 'primary.main',
+            bgcolor: '#ffcc00',
+            color: '#000',
             fontSize: '1.5rem',
             fontWeight: 'bold',
+            boxShadow: '0 0 12px rgba(255, 204, 0, 0.4)',
           }}
         >
           فولاد
@@ -89,13 +96,28 @@ function MainLayout() {
               sx={{
                 borderRadius: 2,
                 '&:hover': {
-                  backgroundColor: 'rgba(0, 188, 212, 0.1)',
+                  backgroundColor: 'rgba(255, 204, 0, 0.1)',
+                  borderLeft: '3px solid #ffcc00',
+                },
+                '&.Mui-selected': {
+                  backgroundColor: 'rgba(255, 204, 0, 0.15)',
+                  borderLeft: '3px solid #ffcc00',
                 },
               }}
             >
-              <ListItemIcon sx={{ color: 'primary.main', minWidth: 40 }}>
+              <ListItemIcon sx={{ color: '#ffcc00', minWidth: 40 }}>
                 {item.badge ? (
-                  <Badge badgeContent={item.badge} color="error" size="small">
+                  <Badge 
+                    badgeContent={item.badge} 
+                    sx={{
+                      '& .MuiBadge-badge': {
+                        backgroundColor: '#ffcc00',
+                        color: '#000',
+                        fontWeight: 'bold',
+                      }
+                    }}
+                    size="small"
+                  >
                     {item.icon}
                   </Badge>
                 ) : (
@@ -116,8 +138,15 @@ function MainLayout() {
       <Divider sx={{ mt: 'auto' }} />
       <List sx={{ px: 2 }}>
         <ListItem disablePadding>
-          <ListItemButton>
-            <ListItemIcon sx={{ minWidth: 40 }}>
+          <ListItemButton
+            sx={{
+              '&:hover': {
+                backgroundColor: 'rgba(255, 204, 0, 0.1)',
+                borderLeft: '3px solid #ffcc00',
+              },
+            }}
+          >
+            <ListItemIcon sx={{ color: '#ffcc00', minWidth: 40 }}>
               <PersonIcon />
             </ListItemIcon>
             <ListItemText
@@ -125,13 +154,21 @@ function MainLayout() {
               primaryTypographyProps={{
                 fontFamily: 'Vazirmatn',
                 fontSize: '0.9rem',
+                color: '#e8e8e8',
               }}
             />
           </ListItemButton>
         </ListItem>
         <ListItem disablePadding>
-          <ListItemButton>
-            <ListItemIcon sx={{ minWidth: 40 }}>
+          <ListItemButton
+            sx={{
+              '&:hover': {
+                backgroundColor: 'rgba(255, 204, 0, 0.1)',
+                borderLeft: '3px solid #ffcc00',
+              },
+            }}
+          >
+            <ListItemIcon sx={{ color: '#ffcc00', minWidth: 40 }}>
               <LogoutIcon />
             </ListItemIcon>
             <ListItemText
@@ -139,6 +176,7 @@ function MainLayout() {
               primaryTypographyProps={{
                 fontFamily: 'Vazirmatn',
                 fontSize: '0.9rem',
+                color: '#e8e8e8',
               }}
             />
           </ListItemButton>
@@ -155,11 +193,20 @@ function MainLayout() {
         sx={{
           width: { sm: `calc(100% - ${drawerWidth}px)` },
           ml: { sm: `${drawerWidth}px` },
-          bgcolor: 'background.paper',
-          color: 'text.primary',
-          borderBottom: '1px solid',
-          borderColor: 'divider',
-          boxShadow: 'none',
+          bgcolor: 'linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%)',
+          background: 'linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%)',
+          color: '#e8e8e8',
+          borderBottom: '1px solid rgba(255, 204, 0, 0.3)',
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: '3px',
+            background: 'linear-gradient(90deg, transparent 0%, #ffcc00 50%, transparent 100%)',
+          },
         }}
       >
         <Toolbar>
@@ -195,21 +242,45 @@ function MainLayout() {
               <Typography variant="caption" sx={{ fontFamily: 'Vazirmatn', display: 'block' }}>
                 نوارهای فعال
               </Typography>
-              <Typography variant="h6" sx={{ color: 'success.main', fontWeight: 700 }}>
+              <Typography variant="h6" sx={{ color: '#ffcc00', fontWeight: 700 }}>
                 {conveyorBelts.filter(b => b.status === 'running').length}/۶
               </Typography>
             </Box>
 
             <Tooltip title="آلارم‌ها">
-              <IconButton sx={{ position: 'relative' }}>
-                <Badge badgeContent={unreadNotifications} color="error">
+              <IconButton 
+                sx={{ 
+                  position: 'relative',
+                  color: '#ffcc00',
+                  '&:hover': {
+                    backgroundColor: 'rgba(255, 204, 0, 0.1)',
+                  },
+                }}
+              >
+                <Badge 
+                  badgeContent={unreadNotifications} 
+                  sx={{
+                    '& .MuiBadge-badge': {
+                      backgroundColor: '#ffcc00',
+                      color: '#000',
+                      fontWeight: 'bold',
+                    }
+                  }}
+                >
                   <NotificationsIcon />
                 </Badge>
               </IconButton>
             </Tooltip>
 
             <Tooltip title="اپراتور: احمد رضایی">
-              <Avatar sx={{ width: 40, height: 40, bgcolor: 'primary.main' }}>
+              <Avatar sx={{ 
+                width: 40, 
+                height: 40, 
+                bgcolor: '#ffcc00',
+                color: '#000',
+                fontWeight: 'bold',
+                boxShadow: '0 0 8px rgba(255, 204, 0, 0.4)',
+              }}>
                 ا.ر
               </Avatar>
             </Tooltip>
@@ -231,7 +302,9 @@ function MainLayout() {
             '& .MuiDrawer-paper': {
               boxSizing: 'border-box',
               width: drawerWidth,
-              bgcolor: 'background.paper',
+              bgcolor: 'linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%)',
+              background: 'linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%)',
+              borderLeft: '1px solid rgba(255, 204, 0, 0.3)',
             },
           }}
         >
@@ -262,7 +335,7 @@ function MainLayout() {
           p: 3,
           width: { sm: `calc(100% - ${drawerWidth}px)` },
           minHeight: '100vh',
-          bgcolor: 'background.default',
+          bgcolor: '#0a0a0a',
         }}
       >
         <Toolbar />

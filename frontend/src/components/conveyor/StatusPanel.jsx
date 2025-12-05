@@ -1,5 +1,6 @@
 // src/components/conveyor/StatusPanel.jsx
 import React from 'react';
+import './StatusPanel.css';
 
 export default function StatusPanel({ plc, currentSpeed, apiBase, beltId, style }) {
   // Helper function to get values from either structure
@@ -33,56 +34,73 @@ export default function StatusPanel({ plc, currentSpeed, apiBase, beltId, style 
   const alarmStatus = getAlarmStatus();
 
   return (
-    <div style={{
-      background: '#263238',
-      color: 'white',
-      padding: '15px',
-      borderRadius: '8px',
-      marginBottom: '20px'
-    }}>
-      <h4 style={{ marginTop: 0 }}>System Status</h4>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '15px' }}>
-        <div>
-          <div style={{ fontSize: '12px', color: '#BDBDBD' }}>PARTS COUNT</div>
-          <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#4CAF50' }}>
-            {partsCount}
+    <div className="status-panel">
+      <div className="status-panel-header">
+        <div className="status-panel-title">
+          <div className="status-panel-icon">📊</div>
+          <h4>وضعیت سیستم</h4>
+        </div>
+      </div>
+      
+      <div className="status-metrics-grid">
+        <div className={`status-metric-card ${motorStatus === 'ON' ? 'active' : ''}`}>
+          <div className="metric-icon motor-icon">⚙️</div>
+          <div className="metric-content">
+            <div className="metric-label">وضعیت موتور</div>
+            <div className={`metric-value ${motorStatus === 'ON' ? 'status-on' : 'status-off'}`}>
+              {motorStatus === 'ON' ? 'فعال' : 'غیرفعال'}
+            </div>
+          </div>
+          <div className={`status-indicator ${motorStatus === 'ON' ? 'indicator-on' : 'indicator-off'}`}></div>
+        </div>
+
+        <div className="status-metric-card">
+          <div className="metric-icon parts-icon">📦</div>
+          <div className="metric-content">
+            <div className="metric-label">تعداد قطعات</div>
+            <div className="metric-value parts-value">{partsCount.toLocaleString('fa-IR')}</div>
           </div>
         </div>
-        <div>
-          <div style={{ fontSize: '12px', color: '#BDBDBD' }}>MOTOR STATUS</div>
-          <div style={{
-            fontSize: '24px',
-            fontWeight: 'bold',
-            color: motorStatus === 'ON' ? '#4CAF50' : '#F44336'
-          }}>
-            {motorStatus}
+
+        <div className={`status-metric-card ${alarmStatus === 'ACTIVE' ? 'alarm-active' : ''}`}>
+          <div className="metric-icon alarm-icon">🚨</div>
+          <div className="metric-content">
+            <div className="metric-label">وضعیت هشدار</div>
+            <div className={`metric-value ${alarmStatus === 'ACTIVE' ? 'alarm-value' : 'ok-value'}`}>
+              {alarmStatus === 'ACTIVE' ? 'فعال' : 'عادی'}
+            </div>
           </div>
+          {alarmStatus === 'ACTIVE' && <div className="alarm-pulse"></div>}
         </div>
-        <div>
-          <div style={{ fontSize: '12px', color: '#BDBDBD' }}>ALARM</div>
-          <div style={{
-            fontSize: '24px',
-            fontWeight: 'bold',
-            color: alarmStatus === 'ACTIVE' ? '#FF5722' : '#4CAF50'
-          }}>
-            {alarmStatus}
-          </div>
-        </div>
-        <div>
-          <div style={{ fontSize: '12px', color: '#BDBDBD' }}>SPEED</div>
-          <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#2196F3' }}>
-            {currentSpeed}x
+
+        <div className="status-metric-card">
+          <div className="metric-icon speed-icon">⚡</div>
+          <div className="metric-content">
+            <div className="metric-label">سرعت</div>
+            <div className="metric-value speed-value">{currentSpeed}x</div>
           </div>
         </div>
       </div>
 
-      {/* Backend Info */}
-      <div style={{ marginTop: '15px', paddingTop: '15px', borderTop: '1px solid #37474F', fontSize: '12px' }}>
-        <div style={{ color: '#BDBDBD', marginBottom: '5px' }}>Backend Connection</div>
-        <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
-          <div>API: {apiBase}</div>
-          <div>Belt ID: {beltId}</div>
-          <div>Belt Width: {style?.belt_width}px</div>
+      {/* System Info */}
+      <div className="system-info">
+        <div className="system-info-header">
+          <span className="info-icon">🔗</span>
+          <span className="info-title">اطلاعات اتصال</span>
+        </div>
+        <div className="system-info-grid">
+          <div className="info-item">
+            <span className="info-label">API:</span>
+            <span className="info-value">{apiBase}</span>
+          </div>
+          <div className="info-item">
+            <span className="info-label">شناسه نوار:</span>
+            <span className="info-value">{beltId}</span>
+          </div>
+          <div className="info-item">
+            <span className="info-label">عرض نوار:</span>
+            <span className="info-value">{style?.belt_width || style?.style?.belt_width || '--'}px</span>
+          </div>
         </div>
       </div>
     </div>

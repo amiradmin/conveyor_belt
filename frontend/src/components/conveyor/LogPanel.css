@@ -1,0 +1,201 @@
+/* Caterpillar Yellow & Black Log Panel Styling */
+
+.log-panel {
+  background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+  padding: 24px;
+  border-radius: 12px;
+  margin-bottom: 0;
+  border: 1px solid rgba(255, 204, 0, 0.3);
+  box-shadow: 
+    0 4px 20px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 204, 0, 0.1),
+    0 0 0 1px rgba(0, 0, 0, 0.3);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: 400px;
+}
+
+.log-panel::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    #ffcc00 50%, 
+    transparent 100%);
+}
+
+.log-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.log-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.log-panel-icon {
+  font-size: 24px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 204, 0, 0.15);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 204, 0, 0.3);
+}
+
+.log-panel-title h4 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  color: white;
+}
+
+.clear-log-btn {
+  background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
+  color: #ffcc00;
+  border: 1px solid rgba(255, 204, 0, 0.3);
+  padding: 8px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+.clear-log-btn:hover {
+  background: linear-gradient(135deg, #333 0%, #2a2a2a 100%);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5), 0 0 8px rgba(255, 204, 0, 0.2);
+  transform: translateY(-1px);
+  border-color: rgba(255, 204, 0, 0.5);
+  color: #ffdd00;
+}
+
+.clear-log-btn:active {
+  transform: translateY(0);
+}
+
+.log-content {
+  flex: 1;
+  overflow-y: auto;
+  font-family: 'Courier New', 'Monaco', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  padding-right: 8px;
+}
+
+.log-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.log-content::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+.log-content::-webkit-scrollbar-thumb {
+  background: rgba(255, 204, 0, 0.3);
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.3);
+}
+
+.log-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 204, 0, 0.5);
+}
+
+.log-entry {
+  padding: 8px 12px;
+  margin-bottom: 4px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: all 0.2s;
+  border-left: 3px solid transparent;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.log-entry:hover {
+  background: rgba(0, 0, 0, 0.4);
+  border-left-color: rgba(255, 204, 0, 0.5);
+}
+
+.log-entry.latest {
+  background: rgba(255, 204, 0, 0.1);
+  border-left-color: rgba(255, 204, 0, 0.6);
+  animation: log-entry-highlight 0.5s ease-out;
+}
+
+@keyframes log-entry-highlight {
+  0% {
+    background: rgba(255, 204, 0, 0.3);
+    transform: translateX(-4px);
+  }
+  100% {
+    background: rgba(255, 204, 0, 0.1);
+    transform: translateX(0);
+  }
+}
+
+.log-timestamp {
+  color: #ffcc00;
+  font-weight: 600;
+  font-size: 11px;
+  min-width: 80px;
+  flex-shrink: 0;
+}
+
+.log-message {
+  color: #e8e8e8;
+  flex: 1;
+  word-break: break-word;
+}
+
+.log-entry.latest .log-message {
+  color: #ffffff;
+  font-weight: 500;
+}
+
+.log-empty {
+  color: #9ca3af;
+  font-style: italic;
+  text-align: center;
+  padding: 40px 20px;
+  font-size: 14px;
+}
+
+/* Log entry types styling */
+.log-entry:has([class*="EMERGENCY"]) {
+  border-left-color: #ffcc00;
+  background: rgba(255, 204, 0, 0.15);
+}
+
+.log-entry:has([class*="ERROR"]) {
+  border-left-color: #ffcc00;
+  background: rgba(255, 204, 0, 0.1);
+}
+
+.log-entry:has([class*="✅"]) {
+  border-left-color: #ffcc00;
+  background: rgba(255, 204, 0, 0.1);
+}
+

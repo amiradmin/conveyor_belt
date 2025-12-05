@@ -1,6 +1,7 @@
 // src/components/conveyor/ConveyorVisualization.jsx
 import React from 'react';
 import { DraggableCore } from 'react-draggable';
+import './ConveyorVisualization.css';
 
 export default function ConveyorVisualization({
   style,
@@ -18,24 +19,10 @@ export default function ConveyorVisualization({
     : (style?.style.belt_stopped_color || style?.style.belt_color || "#5a5a5a");
 
   return (
-    <div style={{
-      background: '#37474F',
-      padding: '20px',
-      borderRadius: '8px',
-      marginBottom: '20px',
-      position: 'relative'
-    }}>
-      <div style={{
-        position: 'absolute',
-        top: '10px',
-        right: '10px',
-        background: 'rgba(0,0,0,0.7)',
-        color: 'white',
-        padding: '5px 10px',
-        borderRadius: '4px',
-        fontSize: '12px'
-      }}>
-        Style ID: {style?.style.id || 'local'}
+    <div className="conveyor-visualization-container">
+      <div className="visualization-badge">
+        <span className="badge-label">شناسه استایل:</span>
+        <span className="badge-value">{style?.style.id || 'local'}</span>
       </div>
 
       <svg width={(style?.style.belt_length || 800) + 100} height={220} style={{ display: 'block', margin: '0 auto' }}>
@@ -123,12 +110,27 @@ export default function ConveyorVisualization({
       `}</style>
 
       {/* Style Info */}
-      <div style={{ marginTop: '10px', fontSize: '11px', color: '#BDBDBD', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-        <div>Belt: {style?.style.belt_length || 800}px × {style?.style.belt_width || 30}px</div>
-        <div>Color: <span style={{ color: style?.style.belt_color || "#5a5a5a" }}>■ {style?.belt_color}</span></div>
-        <div>Rollers: {style?.style.roller_count || 8}</div>
-        <div>Motor: <span style={{ color: style?.style.motor_color || "#222" }}>■</span></div>
-        <div>Camera: {style?.style.camera_x}, {style?.style.camera_y}</div>
+      <div className="visualization-info">
+        <div className="info-row">
+          <span className="info-label">ابعاد نوار:</span>
+          <span className="info-text">{style?.style.belt_length || 800}px × {style?.style.belt_width || 30}px</span>
+        </div>
+        <div className="info-row">
+          <span className="info-label">رنگ:</span>
+          <span className="info-color" style={{ color: style?.style.belt_color || "#5a5a5a" }}>■ {style?.style.belt_color || '#5a5a5a'}</span>
+        </div>
+        <div className="info-row">
+          <span className="info-label">تعداد غلطک:</span>
+          <span className="info-text">{style?.style.roller_count || 8}</span>
+        </div>
+        <div className="info-row">
+          <span className="info-label">موتور:</span>
+          <span className="info-color" style={{ color: style?.style.motor_color || "#222" }}>■</span>
+        </div>
+        <div className="info-row">
+          <span className="info-label">دوربین:</span>
+          <span className="info-text">{style?.style.camera_x || 50}, {style?.style.camera_y || 10}</span>
+        </div>
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 // src/components/conveyor/ControlPanel.jsx
 import React from 'react';
+import './ControlPanel.css';
 
 export default function ControlPanel({
   motorStatus,
@@ -12,120 +13,64 @@ export default function ControlPanel({
   lastFetchTime
 }) {
   return (
-    <div style={{
-      background: '#37474F',
-      padding: '15px',
-      borderRadius: '8px',
-      marginBottom: '20px'
-    }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-        <h4 style={{ color: 'white', margin: 0 }}>Control Panel</h4>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+    <div className="control-panel">
+      <div className="control-panel-header">
+        <div className="control-panel-title">
+          <div className="control-panel-icon">⚙️</div>
+          <h4>پنل کنترل عملیات</h4>
+        </div>
+        <div className="control-panel-actions">
           <button
             onClick={onRefresh}
-            style={{
-              background: '#9C27B0',
-              color: 'white',
-              border: 'none',
-              padding: '8px 16px',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '12px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '5px'
-            }}
+            className="control-btn refresh-btn"
             title="Refresh from backend"
           >
-            🔄 Refresh
+            <span>🔄</span>
+            <span>بروزرسانی</span>
           </button>
-          <div style={{ fontSize: '11px', color: '#BDBDBD' }}>
-            Last: {new Date(lastFetchTime).toLocaleTimeString()}
+          <div className="last-update">
+            <span className="update-label">آخرین بروزرسانی:</span>
+            <span className="update-time">{new Date(lastFetchTime).toLocaleTimeString('fa-IR')}</span>
           </div>
         </div>
       </div>
-      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+      <div className="control-buttons-grid">
         <button
           onClick={onStart}
           disabled={motorStatus === 'ON'}
-          style={{
-            background: motorStatus === 'ON' ? '#666' : '#4CAF50',
-            color: 'white',
-            border: 'none',
-            padding: '10px 20px',
-            borderRadius: '4px',
-            cursor: motorStatus === 'ON' ? 'not-allowed' : 'pointer',
-            fontWeight: 'bold',
-            flex: 1,
-            minWidth: '100px'
-          }}
+          className={`control-btn primary-btn start-btn ${motorStatus === 'ON' ? 'disabled' : ''}`}
         >
-          ▶ START
+          <span className="btn-icon">▶</span>
+          <span className="btn-text">شروع</span>
         </button>
         <button
           onClick={onStop}
           disabled={motorStatus !== 'ON'}
-          style={{
-            background: motorStatus !== 'ON' ? '#666' : '#F44336',
-            color: 'white',
-            border: 'none',
-            padding: '10px 20px',
-            borderRadius: '4px',
-            cursor: motorStatus !== 'ON' ? 'not-allowed' : 'pointer',
-            fontWeight: 'bold',
-            flex: 1,
-            minWidth: '100px'
-          }}
+          className={`control-btn primary-btn stop-btn ${motorStatus !== 'ON' ? 'disabled' : ''}`}
         >
-          ⏹ STOP
+          <span className="btn-icon">⏹</span>
+          <span className="btn-text">توقف</span>
         </button>
         <button
           onClick={onEmergencyStop}
-          style={{
-            background: '#D32F2F',
-            color: 'white',
-            border: 'none',
-            padding: '10px 20px',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontWeight: 'bold',
-            flex: 1,
-            minWidth: '100px'
-          }}
+          className="control-btn emergency-btn"
         >
-          ⛔ E-STOP
+          <span className="btn-icon">⛔</span>
+          <span className="btn-text">توقف اضطراری</span>
         </button>
         <button
           onClick={onReset}
-          style={{
-            background: '#2196F3',
-            color: 'white',
-            border: 'none',
-            padding: '10px 20px',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontWeight: 'bold',
-            flex: 1,
-            minWidth: '100px'
-          }}
+          className="control-btn secondary-btn reset-btn"
         >
-          🔄 RESET
+          <span className="btn-icon">🔄</span>
+          <span className="btn-text">بازنشانی</span>
         </button>
         <button
           onClick={onSave}
-          style={{
-            background: '#FF9800',
-            color: 'white',
-            border: 'none',
-            padding: '10px 20px',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontWeight: 'bold',
-            flex: 1,
-            minWidth: '120px'
-          }}
+          className="control-btn secondary-btn save-btn"
         >
-          💾 SAVE
+          <span className="btn-icon">💾</span>
+          <span className="btn-text">ذخیره تنظیمات</span>
         </button>
       </div>
     </div>
