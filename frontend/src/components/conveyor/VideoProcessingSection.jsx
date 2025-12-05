@@ -1,103 +1,132 @@
 // src/components/conveyor/VideoProcessingSection.jsx
-import React from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import styles from './VideoProcessingSection.module.css';
 
 export default function VideoProcessingSection({
   cameraUrl,
   videoRef,
   showVideoModal,
   setShowVideoModal,
-  availableVideos = [], // Default to empty array
+  availableVideos = [],
   selectedVideoPath,
   setSelectedVideoPath,
   processVideoFile,
   analysisResults,
   processedFrame,
   showProcessedFeed,
-  toggleVideoProcessing
+  toggleVideoProcessing,
+  lastProcessedTime,
+  processingFPS = 2,
+  frameCount = 0,
+  currentFPS = 0,
+  processingStatus = null,
+  processedVideoUrl = null,
+  processingProgress = 0
 }) {
-  const takeSnapshot = () => {
-    const video = videoRef.current;
-    if (video) {
-      try {
-        // Create a new video element to avoid tainting
-        const tempVideo = document.createElement('video');
-        tempVideo.src = cameraUrl || 'http://localhost:8000/media/3.mp4';
-        tempVideo.crossOrigin = 'anonymous'; // Important for CORS
+  const processedVideoRef = useRef(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processedFrames, setProcessedFrames] = useState([]);
+  const [currentFrameIndex, setCurrentFrameIndex] = useState(0);
+  const [showProcessedVideo, setShowProcessedVideo] = useState(false);
+  const [streamingMode, setStreamingMode] = useState('frames');
 
-        tempVideo.onloadeddata = () => {
-          const canvas = document.createElement('canvas');
-          canvas.width = tempVideo.videoWidth || 640;
-          canvas.height = tempVideo.videoHeight || 480;
-          const ctx = canvas.getContext('2d');
-
-          // Draw the video frame
-          ctx.drawImage(tempVideo, 0, 0, canvas.width, canvas.height);
-
-          // Add timestamp/text overlay
-          ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-          ctx.fillRect(10, canvas.height - 40, 200, 30);
-          ctx.fillStyle = '#4CAF50';
-          ctx.font = '14px Arial';
-          ctx.fillText(`Snapshot: ${new Date().toLocaleTimeString()}`, 20, canvas.height - 20);
-
-          // Convert to data URL and download
-          const dataUrl = canvas.toDataURL('image/png');
-          const link = document.createElement('a');
-          link.download = `conveyor_snapshot_${Date.now()}.png`;
-          link.href = dataUrl;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-        };
-
-        tempVideo.load();
-      } catch (error) {
-        console.error('Snapshot error:', error);
-        alert('Unable to take snapshot. Please try again or check CORS settings.');
+  // Reset when processing starts
+  useEffect(() => {
+    if (processingStatus?.active_jobs > 0) {
+      setIsProcessing(true);
+      setProcessedFrames([]);
+      setCurrentFrameIndex(0);
+      setShowProcessedVideo(false);
+      setStreamingMode('frames');
+    } else if (processingStatus?.active_jobs === 0 && processingStatus?.completed_jobs > 0) {
+      setIsProcessing(false);
+      if (processedVideoUrl) {
+        setStreamingMode('video');
+        setShowProcessedVideo(true);
       }
     }
-  };
+  }, [processingStatus, processedVideoUrl]);
 
-  // Create a fallback snapshot function that doesn't use the video
-  const takeSimpleSnapshot = () => {
+  // Handle incoming processed frames
+  useEffect(() => {
+    if (processedFrame && showProcessedFeed) {
+      console.log('New processed frame received:', processedFrame.substring(0, 50) + '...');
+      setProcessedFrames(prev => {
+        const newFrames = [...prev, processedFrame];
+        // Keep only last 100 frames
+        return newFrames.length > 100 ? newFrames.slice(-100) : newFrames;
+      });
+    }
+  }, [processedFrame, showProcessedFeed]);
+
+  // Auto-play processed video
+  useEffect(() => {
+    if (processedVideoRef.current && showProcessedVideo) {
+      console.log('Loading processed video:', processedVideoUrl);
+      processedVideoRef.current.load();
+      const playVideo = () => {
+        processedVideoRef.current.play().catch(e => {
+          console.log('Auto-play prevented, waiting for user interaction');
+        });
+      };
+
+      // Try to play after a short delay
+      const timer = setTimeout(playVideo, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [showProcessedVideo, processedVideoUrl]);
+
+  // Animate through frames
+  useEffect(() => {
+    if (!showProcessedFeed || streamingMode !== 'frames' || processedFrames.length < 2) {
+      return;
+    }
+
+    const targetInterval = 1000 / Math.max(1, currentFPS || processingFPS);
+    console.log(`Animating frames at ${targetInterval}ms interval, ${processedFrames.length} frames available`);
+
+    const interval = setInterval(() => {
+      setCurrentFrameIndex(prev => {
+        const nextIndex = (prev + 1) % processedFrames.length;
+        return nextIndex;
+      });
+    }, targetInterval);
+
+    return () => clearInterval(interval);
+  }, [showProcessedFeed, streamingMode, processedFrames.length, currentFPS, processingFPS]);
+
+  // Get current frame for display
+  const getCurrentFrame = useCallback(() => {
+    if (streamingMode === 'video' && showProcessedVideo) {
+      return null;
+    }
+    if (processedFrames.length > 0 && streamingMode === 'frames') {
+      return processedFrames[currentFrameIndex] || processedFrame;
+    }
+    return processedFrame;
+  }, [streamingMode, showProcessedVideo, processedFrames, currentFrameIndex, processedFrame]);
+
+  const currentDisplayFrame = getCurrentFrame();
+
+  const takeSnapshot = () => {
     try {
-      // Create a simple snapshot without using the video
-      const canvas = document.createElement('canvas');
-      canvas.width = 640;
-      canvas.height = 480;
-      const ctx = canvas.getContext('2d');
-
-      // Create a simple conveyor visualization
-      ctx.fillStyle = '#37474F';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      // Draw conveyor belt
-      ctx.fillStyle = '#455A64';
-      ctx.fillRect(0, 200, canvas.width, 80);
-
-      // Draw conveyor rollers
-      ctx.fillStyle = '#78909C';
-      for (let i = 0; i < 8; i++) {
-        ctx.beginPath();
-        ctx.arc(80 + i * 70, 240, 20, 0, Math.PI * 2);
-        ctx.fill();
+      const video = videoRef.current;
+      if (!video) {
+        throw new Error('Video element not found');
       }
 
-      // Draw objects
-      ctx.fillStyle = '#4CAF50';
-      ctx.fillRect(150, 180, 60, 40); // Green box
-      ctx.fillStyle = '#2196F3';
-      ctx.fillRect(300, 170, 50, 60); // Blue box
-      ctx.fillStyle = '#FF9800';
-      ctx.fillRect(450, 190, 70, 30); // Orange box
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0);
 
-      // Add text
-      ctx.fillStyle = 'white';
-      ctx.font = 'bold 20px Arial';
-      ctx.fillText('Conveyor System Snapshot', 150, 50);
-      ctx.font = '16px Arial';
-      ctx.fillText(`Time: ${new Date().toLocaleTimeString()}`, 200, 80);
-      ctx.fillText('Status: Operational', 200, 110);
+      // Add timestamp
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+      ctx.fillRect(10, canvas.height - 40, 200, 30);
+      ctx.fillStyle = '#4CAF50';
+      ctx.font = '14px Arial';
+      ctx.fillText(`Snapshot: ${new Date().toLocaleTimeString()}`, 20, canvas.height - 20);
 
       // Download
       const dataUrl = canvas.toDataURL('image/png');
@@ -107,26 +136,160 @@ export default function VideoProcessingSection({
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-
     } catch (error) {
-      console.error('Simple snapshot error:', error);
-      alert('Snapshot created successfully!');
+      console.warn('Video snapshot failed, using fallback:', error);
+      // Fallback to simple snapshot
+      const canvas = document.createElement('canvas');
+      canvas.width = 640;
+      canvas.height = 480;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#37474F';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = 'white';
+      ctx.font = '20px Arial';
+      ctx.fillText('Conveyor Snapshot', 200, 240);
+      ctx.font = '16px Arial';
+      ctx.fillText(new Date().toLocaleTimeString(), 250, 280);
+
+      const dataUrl = canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.download = `fallback_snapshot_${Date.now()}.png`;
+      link.href = dataUrl;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     }
   };
 
+  const takeProcessedSnapshot = () => {
+    try {
+      if (streamingMode === 'video' && showProcessedVideo && processedVideoRef.current) {
+        const canvas = document.createElement('canvas');
+        const video = processedVideoRef.current;
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0);
+
+        // Add overlay
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(10, canvas.height - 40, 220, 30);
+        ctx.fillStyle = '#4CAF50';
+        ctx.font = '14px Arial';
+        ctx.fillText(`AI Processed: ${new Date().toLocaleTimeString()}`, 20, canvas.height - 20);
+
+        const dataUrl = canvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.download = `ai_video_snapshot_${Date.now()}.png`;
+        link.href = dataUrl;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else if (currentDisplayFrame) {
+        // Capture from current frame
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+
+          // Add overlay
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+          ctx.fillRect(10, canvas.height - 40, 220, 30);
+          ctx.fillStyle = '#4CAF50';
+          ctx.font = '14px Arial';
+          ctx.fillText(`AI Frame: ${new Date().toLocaleTimeString()}`, 20, canvas.height - 20);
+
+          const dataUrl = canvas.toDataURL('image/png');
+          const link = document.createElement('a');
+          link.download = `ai_frame_snapshot_${Date.now()}.png`;
+          link.href = dataUrl;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        };
+        img.onerror = () => {
+          alert('Failed to load processed frame for snapshot');
+        };
+        img.src = currentDisplayFrame;
+      } else {
+        alert('No processed content available for snapshot');
+      }
+    } catch (error) {
+      console.error('Processed snapshot error:', error);
+      alert('Unable to capture processed snapshot');
+    }
+  };
+
+  const calculateLatency = () => {
+    if (processingFPS <= 0) return '-- ms';
+    const latency = Math.round(1000 / processingFPS);
+    return `~${latency} ms`;
+  };
+
+  const formatTimeSinceLastFrame = () => {
+    if (!lastProcessedTime) return '--';
+    const seconds = Math.floor((Date.now() - lastProcessedTime) / 1000);
+    if (seconds < 1) return 'Just now';
+    if (seconds < 60) return `${seconds}s ago`;
+    const minutes = Math.floor(seconds / 60);
+    return `${minutes}m ago`;
+  };
+
+  const handleProcessedVideoLoaded = () => {
+    console.log('Processed video loaded successfully');
+  };
+
+  const handleProcessedVideoError = (e) => {
+    console.error('Processed video error:', e);
+    setShowProcessedVideo(false);
+    setStreamingMode('frames');
+  };
+
+  const switchToFrameMode = () => {
+    setStreamingMode('frames');
+    setShowProcessedVideo(false);
+  };
+
+  const switchToVideoMode = () => {
+    if (processedVideoUrl) {
+      setStreamingMode('video');
+      setShowProcessedVideo(true);
+    }
+  };
+
+  // Debug info
+  useEffect(() => {
+    console.log('VideoProcessingSection state:', {
+      isProcessing,
+      streamingMode,
+      showProcessedVideo,
+      processedFramesCount: processedFrames.length,
+      currentFrameIndex,
+      hasCurrentFrame: !!currentDisplayFrame,
+      processingProgress,
+      frameCount,
+      currentFPS,
+      processedVideoUrl
+    });
+  }, [isProcessing, streamingMode, showProcessedVideo, processedFrames.length, currentFrameIndex, currentDisplayFrame, processingProgress, frameCount, currentFPS, processedVideoUrl]);
+
   return (
-    <div className="video-processing-section">
-      <div className="video-cards">
+    <div className={styles.videoProcessingSection}>
+      <div className={styles.videoCards}>
         {/* Original Camera Feed */}
-        <div className="video-card original-feed">
-          <div className="card-header">
+        <div className={styles.videoCard}>
+          <div className={styles.cardHeader}>
             <h4>
-              <span className="status-indicator blue"></span>
+              <span className={`${styles.statusIndicator} ${styles.blue}`}></span>
               Original Feed
             </h4>
-            <div className="header-actions">
+            <div className={styles.headerActions}>
               <button
-                className="toggle-ai-btn"
+                className={styles.toggleAiBtn}
                 onClick={toggleVideoProcessing}
                 title={showProcessedFeed ? "Stop AI Processing" : "Start AI Processing"}
               >
@@ -142,11 +305,11 @@ export default function VideoProcessingSection({
                   </>
                 )}
               </button>
-              <div className="camera-badge">Camera 1</div>
+              <div className={styles.cameraBadge}>Camera 1</div>
             </div>
           </div>
 
-          <div className="video-container">
+          <div className={styles.videoContainer}>
             <video
               ref={videoRef}
               src={cameraUrl || 'http://localhost:8000/media/3.mp4'}
@@ -154,15 +317,12 @@ export default function VideoProcessingSection({
               loop
               muted
               playsInline
-              crossOrigin="anonymous" // ADD THIS LINE
-              onLoadedData={() => console.log('Video loaded and ready')}
-              onError={(e) => {
-                console.error('Video loading error:', e);
-                console.log('Video source:', cameraUrl || 'http://localhost:8000/media/3.mp4');
-              }}
+              crossOrigin="anonymous"
+              onLoadedData={() => console.log('Original video loaded')}
+              onError={(e) => console.error('Original video error:', e)}
             />
             <button
-              className="expand-btn"
+              className={styles.expandBtn}
               onClick={() => setShowVideoModal(true)}
               title="Expand camera view"
             >
@@ -170,12 +330,12 @@ export default function VideoProcessingSection({
             </button>
           </div>
 
-          <div className="video-info">
+          <div className={styles.videoInfo}>
             <div>
-              <div>Status: <span className="status-live">● Live</span></div>
+              <div>Status: <span className={styles.statusLive}>● Live</span></div>
               <div>Source: {cameraUrl ? 'Camera' : 'Demo'}</div>
             </div>
-            <div className="video-specs">
+            <div className={styles.videoSpecs}>
               <div>720×1280</div>
               <div>30 FPS</div>
             </div>
@@ -184,124 +344,212 @@ export default function VideoProcessingSection({
 
         {/* AI Processed Feed */}
         {showProcessedFeed && (
-          <div className="video-card processed-feed">
-            <div className="card-header">
+          <div className={`${styles.videoCard} ${styles.processedFeed}`}>
+            <div className={styles.cardHeader}>
               <h4>
-                <span className="status-indicator green"></span>
+                <span className={`${styles.statusIndicator} ${styles.green}`}></span>
                 AI Processed Feed
               </h4>
-              <div className="ai-badge">
-                <span className="pulse-icon">⚡</span>
-                LIVE AI
+              <div className={styles.aiBadge}>
+                <span className={styles.pulseIcon}>⚡</span>
+                {isProcessing ? `PROCESSING ${Math.round(processingProgress)}%` :
+                 streamingMode === 'video' ? 'VIDEO' :
+                 `REALTIME ${currentFPS || processingFPS}FPS`}
               </div>
             </div>
 
-            <div className="video-container">
-              {processedFrame ? (
-                <img
-                  src={processedFrame}
-                  alt="Processed Feed"
-                  className="processed-image"
-                  crossOrigin="anonymous" // ADD THIS FOR PROCESSED IMAGES TOO
-                />
-              ) : (
-                <div className="processing-placeholder">
-                  <div className="spinner"></div>
-                  <div>Processing frames...</div>
-                  <div style={{ fontSize: '12px', color: '#90CAF9' }}>
-                    {analysisResults ? 'AI Analysis Active' : 'Waiting for backend'}
-                  </div>
+            <div className={styles.videoContainer}>
+              {/* Video mode */}
+              {streamingMode === 'video' && processedVideoUrl && (
+                <div className={styles.videoWrapper}>
+                  <video
+                    ref={processedVideoRef}
+                    src={processedVideoUrl}
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                    crossOrigin="anonymous"
+                    onLoadedData={handleProcessedVideoLoaded}
+                    onError={handleProcessedVideoError}
+                    className={styles.processedVideo}
+                  />
+                  {isProcessing && (
+                    <div className={styles.processingOverlay}>
+                      <div className={styles.processingText}>
+                        Processing: {Math.round(processingProgress)}%
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
-              {analysisResults && (
+              {/* Frame mode */}
+              {streamingMode === 'frames' && currentDisplayFrame && (
+                <img
+                  src={currentDisplayFrame}
+                  alt="Processed Feed"
+                  className={styles.processedImage}
+                  crossOrigin="anonymous"
+                  onLoad={() => console.log('Processed frame loaded')}
+                  onError={(e) => console.error('Processed frame error:', e)}
+                />
+              )}
+
+              {/* Loading/Placeholder */}
+              {(!currentDisplayFrame || (streamingMode === 'video' && !showProcessedVideo)) && (
+                <div className={styles.processingPlaceholder}>
+                  {isProcessing ? (
+                    <>
+                      <div className={styles.spinner}></div>
+                      <div className={styles.placeholderText}>
+                        Processing video: {Math.round(processingProgress)}%
+                      </div>
+                      <div className={styles.bufferInfo}>
+                        Frames received: {processedFrames.length}
+                      </div>
+                      <div className={styles.helpText}>
+                        Frames will appear as they are processed...
+                      </div>
+                    </>
+                  ) : processedFrames.length === 0 ? (
+                    <>
+                      <div className={styles.spinner}></div>
+                      <div className={styles.placeholderText}>
+                        Waiting for processed frames...
+                      </div>
+                      <div className={styles.helpText}>
+                        Click "Process Video File" to start
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className={styles.spinner}></div>
+                      <div className={styles.placeholderText}>
+                        Loading processed frames...
+                      </div>
+                      <div className={styles.bufferInfo}>
+                        {processedFrames.length} frames ready
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Analysis Overlays */}
+              {analysisResults && currentDisplayFrame && (
                 <>
-                  <div className="analysis-overlay top-left">
+                  <div className={`${styles.analysisOverlay} ${styles.topLeft}`}>
                     <span>🔍</span>
                     Objects: {analysisResults.object_count || analysisResults.objects?.length || 0}
                   </div>
-                  <div className="analysis-overlay top-right">
-                    <div className="confidence-value">
+                  <div className={`${styles.analysisOverlay} ${styles.topRight}`}>
+                    <div className={styles.confidenceValue}>
                       {analysisResults.confidence ? `${Math.round(analysisResults.confidence * 100)}%` : '--%'}
                     </div>
-                    <div className="confidence-label">Confidence</div>
+                    <div className={styles.confidenceLabel}>Confidence</div>
                   </div>
                 </>
               )}
+
+              {/* Mode toggle button */}
+              {processedVideoUrl && (
+                <div className={`${styles.analysisOverlay} ${styles.bottomRight}`}>
+                  <button
+                    className={styles.modeToggleBtn}
+                    onClick={streamingMode === 'video' ? switchToFrameMode : switchToVideoMode}
+                    title={streamingMode === 'video' ? 'Switch to frame streaming' : 'Switch to video playback'}
+                  >
+                    {streamingMode === 'video' ? '🎞️' : '🎬'}
+                  </button>
+                </div>
+              )}
+
+              {/* Snapshot button */}
+              {currentDisplayFrame && (
+                <button
+                  className={`${styles.expandBtn} ${styles.snapshotBtn}`}
+                  onClick={takeProcessedSnapshot}
+                  title="Take snapshot of processed feed"
+                >
+                  📸
+                </button>
+              )}
             </div>
 
-            <div className="video-info">
+            <div className={styles.videoInfo}>
               <div>
-                <div>Processing: <span className="processing-type">Real-time</span></div>
+                <div>Status: <span className={styles.processingType}>
+                  {isProcessing ? 'Processing' : streamingMode === 'video' ? 'Video' : 'Streaming'}
+                </span></div>
                 <div>
-                  Objects: <span className="object-count">
-                    {analysisResults?.object_count || analysisResults?.objects?.length || 0}
-                  </span>
+                  Frames: <span className={styles.frameCount}>{frameCount}</span>
+                  {streamingMode === 'frames' && (
+                    <span className={styles.fpsCounter}> ({currentFPS || processingFPS} FPS)</span>
+                  )}
                 </div>
               </div>
-              <div className="processing-specs">
-                <div>Latency: <span className="latency">~2000ms</span></div>
-                <div>Frame Rate: <span className="frame-rate">0.5 FPS</span></div>
+              <div className={styles.processingSpecs}>
+                <div>Mode: <span className={styles.streamingMode}>{streamingMode}</span></div>
+                {streamingMode === 'frames' && (
+                  <div>Buffer: <span className={styles.bufferCount}>{processedFrames.length}</span></div>
+                )}
               </div>
             </div>
 
-            {analysisResults && (
-              <div className="analysis-stats">
-                <div className="stat-item">
-                  <div className="stat-label">OBJECTS</div>
-                  <div className="stat-value">
-                    {analysisResults.object_count || analysisResults.objects?.length || 0}
-                  </div>
-                </div>
-                <div className="stat-item">
-                  <div className="stat-label">CONFIDENCE</div>
-                  <div className="stat-value">
-                    {analysisResults.confidence ? `${Math.round(analysisResults.confidence * 100)}%` : '--%'}
-                  </div>
-                </div>
-                <div className="stat-item">
-                  <div className="stat-label">HEALTH</div>
-                  <div className="stat-value">
-                    {analysisResults.system_health ? `${Math.round(analysisResults.system_health)}%` : '--%'}
-                  </div>
-                </div>
-                <div className="stat-item">
-                  <div className="stat-label">ALERTS</div>
-                  <div className="stat-value">
-                    {analysisResults.alerts?.length || 0}
-                  </div>
+            {/* Stats */}
+            <div className={styles.analysisStats}>
+              <div className={styles.statItem}>
+                <div className={styles.statLabel}>OBJECTS</div>
+                <div className={styles.statValue}>
+                  {analysisResults?.object_count || analysisResults?.objects?.length || 0}
                 </div>
               </div>
-            )}
+              <div className={styles.statItem}>
+                <div className={styles.statLabel}>CONFIDENCE</div>
+                <div className={styles.statValue}>
+                  {analysisResults?.confidence ? `${Math.round(analysisResults.confidence * 100)}%` : '--%'}
+                </div>
+              </div>
+              <div className={styles.statItem}>
+                <div className={styles.statLabel}>FRAMES</div>
+                <div className={styles.statValue}>{frameCount}</div>
+              </div>
+              <div className={styles.statItem}>
+                <div className={styles.statLabel}>BUFFER</div>
+                <div className={styles.statValue}>{processedFrames.length}</div>
+              </div>
+            </div>
           </div>
         )}
       </div>
 
       {/* Camera Controls */}
-      <div className="camera-controls">
-        <div className="quick-actions">
+      <div className={styles.cameraControls}>
+        <div className={styles.quickActions}>
           <button
-            className="action-btn expand-btn"
+            className={`${styles.actionBtn} ${styles.expandBtn}`}
             onClick={() => setShowVideoModal(true)}
           >
             <span>📹</span>
             Expand View
           </button>
           <button
-            className="action-btn simple-snapshot-btn"
-            onClick={takeSimpleSnapshot}
-            title="Take a snapshot without video capture"
+            className={`${styles.actionBtn} ${styles.snapshotBtn}`}
+            onClick={takeSnapshot}
+            title="Take snapshot from video"
           >
-            <span>🖼️</span>
-            Simple Snapshot
+            <span>📸</span>
+            Take Snapshot
           </button>
         </div>
 
-        <div className="video-selection">
+        <div className={styles.videoSelection}>
           <label>Select Video to Process:</label>
           <select
             value={selectedVideoPath}
             onChange={(e) => setSelectedVideoPath(e.target.value)}
+            disabled={isProcessing}
           >
             <option value="">-- Select a video --</option>
             {Array.isArray(availableVideos) && availableVideos.map((video, index) => (
@@ -311,447 +559,119 @@ export default function VideoProcessingSection({
             ))}
           </select>
           {!Array.isArray(availableVideos) && availableVideos.length === 0 && (
-            <div className="no-videos">No videos available</div>
+            <div className={styles.noVideos}>No videos available</div>
           )}
         </div>
 
         <button
-          className="action-btn snapshot-btn"
-          onClick={takeSnapshot}
-          title="Take snapshot from video (requires CORS)"
-        >
-          <span>📸</span>
-          Video Snapshot
-        </button>
-
-        <button
-          className="action-btn process-btn"
+          className={`${styles.actionBtn} ${styles.processBtn}`}
           onClick={processVideoFile}
-          disabled={!selectedVideoPath}
+          disabled={!selectedVideoPath || isProcessing}
         >
-          <span>🎬</span>
-          Process Video File
+          {isProcessing ? (
+            <>
+              <div className={styles.processingSpinner}></div>
+              Processing... {Math.round(processingProgress)}%
+            </>
+          ) : (
+            <>
+              <span>🎬</span>
+              Process Video File
+            </>
+          )}
         </button>
       </div>
 
+      {/* Status Panel */}
+      {showProcessedFeed && (
+        <div className={styles.statusPanel}>
+          <div className={styles.statusHeader}>
+            <h4>Processing Status</h4>
+            <div className={styles.statusBadge}>
+              {isProcessing ? 'PROCESSING' : streamingMode === 'video' ? 'VIDEO READY' : 'STREAMING'}
+            </div>
+          </div>
 
-      <style jsx>{`
-        .video-processing-section {
-          margin-bottom: 20px;
-          animation: slideIn 0.3s ease-out;
-        }
+          <div className={styles.statusGrid}>
+            <div className={styles.statusItem}>
+              <div className={styles.statusLabel}>Mode</div>
+              <div className={styles.statusValue}>{streamingMode}</div>
+            </div>
+            <div className={styles.statusItem}>
+              <div className={styles.statusLabel}>Progress</div>
+              <div className={styles.statusValue}>
+                {isProcessing ? `${Math.round(processingProgress)}%` : '100%'}
+              </div>
+            </div>
+            <div className={styles.statusItem}>
+              <div className={styles.statusLabel}>Frames</div>
+              <div className={styles.statusValue}>{frameCount}</div>
+            </div>
+            <div className={styles.statusItem}>
+              <div className={styles.statusLabel}>Buffer</div>
+              <div className={styles.statusValue}>{processedFrames.length}</div>
+            </div>
+            <div className={styles.statusItem}>
+              <div className={styles.statusLabel}>FPS</div>
+              <div className={styles.statusValue}>{currentFPS || processingFPS}</div>
+            </div>
+            <div className={styles.statusItem}>
+              <div className={styles.statusLabel}>Last Frame</div>
+              <div className={styles.statusValue}>{formatTimeSinceLastFrame()}</div>
+            </div>
+          </div>
 
-        .video-cards {
-          display: flex;
-          gap: 20px;
-          margin-bottom: 20px;
-          flex-wrap: wrap;
-        }
+          <div className={styles.statusActions}>
+            {isProcessing && (
+              <div className={styles.progressBar}>
+                <div
+                  className={styles.progressFill}
+                  style={{ width: `${processingProgress}%` }}
+                ></div>
+              </div>
+            )}
+            <div className={styles.actionButtons}>
+              {processedVideoUrl && (
+                <button
+                  className={styles.modeSwitchBtn}
+                  onClick={streamingMode === 'video' ? switchToFrameMode : switchToVideoMode}
+                >
+                  {streamingMode === 'video' ? 'Switch to Frames' : 'Switch to Video'}
+                </button>
+              )}
+              <button
+                className={styles.restartBtn}
+                onClick={toggleVideoProcessing}
+              >
+                {showProcessedFeed ? 'Stop AI' : 'Start AI'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-        .video-card {
-          background: #37474F;
-          padding: 15px;
-          border-radius: 10px;
-          box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-          flex: 1;
-          min-width: 250px;
-        }
-
-        .processed-feed {
-          border: 2px solid #4CAF50;
-        }
-
-        .card-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 10px;
-        }
-
-        .card-header h4 {
-          margin: 0;
-          color: white;
-          font-size: 14px;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .status-indicator {
-          width: 10px;
-          height: 10px;
-          border-radius: 50%;
-          display: inline-block;
-        }
-
-        .status-indicator.blue {
-          background-color: #0080FF;
-        }
-
-        .status-indicator.green {
-          background-color: #4CAF50;
-        }
-
-        .header-actions {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-        }
-
-        .toggle-ai-btn {
-          background: #4CAF50;
-          color: white;
-          border: none;
-          padding: 6px 12px;
-          border-radius: 4px;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          font-size: 12px;
-          transition: all 0.2s;
-        }
-
-        .toggle-ai-btn:hover {
-          opacity: 0.9;
-        }
-
-        .camera-badge {
-          font-size: 11px;
-          color: #BDBDBD;
-          background-color: rgba(0,0,0,0.3);
-          padding: 3px 8px;
-          border-radius: 4px;
-        }
-
-        .ai-badge {
-          font-size: 11px;
-          color: #4CAF50;
-          background-color: rgba(76, 175, 80, 0.1);
-          padding: 3px 8px;
-          border-radius: 4px;
-          display: flex;
-          align-items: center;
-          gap: 5px;
-        }
-
-        .pulse-icon {
-          font-size: 12px;
-          animation: pulse 1.5s infinite;
-        }
-
-        .video-container {
-          position: relative;
-          margin-bottom: 10px;
-          height: 200px;
-          overflow: hidden;
-        }
-
-        video, .processed-image {
-          width: 100%;
-          border: 2px solid #455A64;
-          border-radius: 8px;
-          background-color: #000;
-          display: block;
-          height: 100%;
-          object-fit: cover;
-        }
-
-        .processed-image {
-          border-color: #4CAF50;
-        }
-
-        .processing-placeholder {
-          border: 2px dashed #4CAF50;
-          border-radius: 8px;
-          background-color: #000;
-          height: 100%;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          color: #4CAF50;
-          font-size: 14px;
-          gap: 10px;
-        }
-
-        .spinner {
-          width: 30px;
-          height: 30px;
-          border: 3px solid #4CAF50;
-          border-top-color: transparent;
-          border-radius: 50%;
-          animation: spin 1s linear infinite;
-        }
-
-        .expand-btn {
-          position: absolute;
-          bottom: 10px;
-          right: 10px;
-          background: rgba(0, 128, 255, 0.9);
-          border: none;
-          border-radius: 50%;
-          width: 36px;
-          height: 36px;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justifyContent: center;
-          color: white;
-          font-size: 18px;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-          transition: all 0.2s;
-        }
-
-        .expand-btn:hover {
-          transform: scale(1.1);
-        }
-
-        .analysis-overlay {
-          position: absolute;
-          background: rgba(0,0,0,0.7);
-          color: white;
-          padding: 4px 8px;
-          border-radius: 4px;
-          font-size: 11px;
-          display: flex;
-          align-items: center;
-          gap: 5px;
-          backdrop-filter: blur(4px);
-        }
-
-        .top-left {
-          top: 10px;
-          left: 10px;
-        }
-
-        .top-right {
-          top: 10px;
-          right: 10px;
-          text-align: center;
-        }
-
-        .confidence-value {
-          color: #4CAF50;
-          font-weight: bold;
-        }
-
-        .confidence-label {
-          font-size: 9px;
-          color: #BDBDBD;
-        }
-
-        .video-info {
-          font-size: 11px;
-          color: #BDBDBD;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 10px;
-        }
-
-        .status-live {
-          color: #4CAF50;
-        }
-
-        .processing-type {
-          color: #FF9800;
-        }
-
-        .object-count {
-          color: #2196F3;
-          font-weight: bold;
-          margin-left: 5px;
-        }
-
-        .latency, .frame-rate {
-          color: #4CAF50;
-        }
-
-        .analysis-stats {
-          display: flex;
-          gap: 8px;
-          font-size: 10px;
-        }
-
-        .stat-item {
-          flex: 1;
-          background: rgba(0,0,0,0.3);
-          padding: 6px 4px;
-          border-radius: 4px;
-          text-align: center;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 2px;
-        }
-
-        .stat-label {
-          color: #FF9800;
-          font-size: 9px;
-        }
-
-        .stat-value {
-          color: white;
-          font-weight: bold;
-          font-size: 12px;
-        }
-
-        .camera-controls {
-          display: flex;
-          gap: 10px;
-          flex-wrap: wrap;
-          align-items: center;
-          margin-bottom: 10px;
-        }
-
-        .quick-actions {
-          display: flex;
-          gap: 10px;
-          flex: 1;
-          min-width: 300px;
-        }
-
-        .video-selection {
-          background: #37474F;
-          padding: 10px;
-          border-radius: 6px;
-          flex: 1;
-          min-width: 250px;
-        }
-
-        .video-selection label {
-          font-size: 12px;
-          color: #BDBDBD;
-          margin-bottom: 5px;
-          display: block;
-        }
-
-        .video-selection select {
-          width: 100%;
-          padding: 8px;
-          background: #263238;
-          color: white;
-          border: 1px solid #455A64;
-          border-radius: 4px;
-          font-size: 14px;
-        }
-
-        .no-videos {
-          font-size: 12px;
-          color: #FF9800;
-          margin-top: 5px;
-          text-align: center;
-        }
-
-        .action-btn {
-          background: linear-gradient(135deg, #455A64, #37474F);
-          color: white;
-          border: none;
-          padding: 10px 20px;
-          border-radius: 6px;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          font-size: 14px;
-          transition: all 0.2s;
-          min-width: 200px;
-        }
-
-        .action-btn:hover:not(:disabled) {
-          background: linear-gradient(135deg, #37474F, #263238);
-        }
-
-        .action-btn:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-
-        .simple-snapshot-btn {
-          background: linear-gradient(135deg, #FF9800, #F57C00);
-        }
-
-        .simple-snapshot-btn:hover:not(:disabled) {
-          background: linear-gradient(135deg, #F57C00, #E65100);
-        }
-
-        .snapshot-btn {
-          background: linear-gradient(135deg, #2196F3, #1976D2);
-        }
-
-        .snapshot-btn:hover:not(:disabled) {
-          background: linear-gradient(135deg, #1976D2, #1565C0);
-        }
-
-        .process-btn {
-          background: linear-gradient(135deg, #9C27B0, #7B1FA2);
-        }
-
-        .process-btn:hover:not(:disabled) {
-          background: linear-gradient(135deg, #7B1FA2, #6A1B9A);
-        }
-
-        .cors-warning {
-          background: rgba(255, 152, 0, 0.1);
-          border: 1px solid #FF9800;
-          border-radius: 6px;
-          padding: 10px;
-          margin-top: 10px;
-          font-size: 12px;
-          color: #FFE0B2;
-        }
-
-        .cors-warning summary {
-          cursor: pointer;
-          color: #FF9800;
-          font-weight: bold;
-        }
-
-        .cors-warning .warning-content {
-          margin-top: 10px;
-          padding-top: 10px;
-          border-top: 1px dashed #FF9800;
-        }
-
-        .cors-warning pre {
-          background: rgba(0, 0, 0, 0.3);
-          padding: 10px;
-          border-radius: 4px;
-          overflow-x: auto;
-          font-size: 10px;
-          margin: 10px 0;
-        }
-
-        .cors-warning code {
-          background: rgba(0, 0, 0, 0.3);
-          padding: 2px 6px;
-          border-radius: 3px;
-          font-family: monospace;
-        }
-
-        @keyframes pulse {
-          0% { opacity: 1; }
-          50% { opacity: 0.7; }
-          100% { opacity: 1; }
-        }
-
-        @keyframes slideIn {
-          from {
-            opacity: 0;
-            transform: translateY(-10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      `}</style>
+      {/* Info Box */}
+      <div className={styles.infoBox}>
+        <details>
+          <summary>ℹ️ How video processing works</summary>
+          <div className={styles.infoContent}>
+            <p><strong>Process Video File:</strong></p>
+            <ol>
+              <li>Select a video from the dropdown</li>
+              <li>Click "Process Video File"</li>
+              <li>Processing starts immediately</li>
+              <li>Processed frames appear in real-time as they're generated</li>
+              <li>Once complete, you can switch to full video playback</li>
+            </ol>
+            <p><strong>Streaming Modes:</strong></p>
+            <ul>
+              <li><strong>Frame-by-Frame:</strong> Real-time processed frames stream</li>
+              <li><strong>Video Playback:</strong> Full processed video (available after processing completes)</li>
+            </ul>
+            <p><strong>Note:</strong> The WebSocket is already connected and receiving data.</p>
+          </div>
+        </details>
+      </div>
     </div>
   );
 }

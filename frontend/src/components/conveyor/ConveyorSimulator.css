@@ -304,3 +304,88 @@
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
 }
+
+
+/* Add these styles to your existing ConveyorSimulator.css */
+
+.fps-control {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: #90CAF9;
+}
+
+.fps-label {
+  color: #BDBDBD;
+}
+
+.fps-select {
+  background: #37474F;
+  color: white;
+  border: 1px solid #455A64;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+}
+
+.fps-select:hover {
+  border-color: #64B5F6;
+}
+
+.fps-select:focus {
+  border-color: #2196F3;
+  box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.2);
+}
+
+.capture-btn {
+  background: #2196F3;
+  border-color: #64B5F6;
+}
+
+.capture-btn:hover {
+  background: #1976D2;
+}
+
+/* Add animation for real-time processing */
+@keyframes streamPulse {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(76, 175, 80, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(76, 175, 80, 0.8);
+  }
+}
+
+.streaming-active {
+  animation: streamPulse 2s infinite;
+}
+
+
+/* Add these to your existing CSS */
+.processed-canvas {
+  transition: opacity 0.1s ease-in-out;
+  image-rendering: optimizeSpeed; /* Faster rendering */
+  image-rendering: -moz-crisp-edges;
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: optimize-contrast;
+  -ms-interpolation-mode: nearest-neighbor;
+}
+
+@keyframes frameUpdate {
+  0% { opacity: 0.95; }
+  50% { opacity: 1; }
+  100% { opacity: 0.95; }
+}
+
+.streaming-active {
+  animation: frameUpdate 0.5s infinite;
+}
+
+/* Optimize performance */
+.video-container {
+  will-change: transform;
+  transform: translateZ(0);
+}
