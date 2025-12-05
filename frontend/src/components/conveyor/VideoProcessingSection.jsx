@@ -560,32 +560,60 @@ export default function VideoProcessingSection({
                         
                         const ctx = canvas.getContext('2d');
                         
-                        // Draw green bounding boxes for each detected object
+                        // Draw green contours and bounding boxes for each detected Iron Ore object
                         analysisResults.objects.forEach((obj, index) => {
                           if (obj.bbox && Array.isArray(obj.bbox) && obj.bbox.length >= 4) {
                             const [x1, y1, x2, y2] = obj.bbox;
-                            const width = x2 - x1;
-                            const height = y2 - y1;
                             
-                            // Draw green bounding box with thick line (Caterpillar style)
-                            ctx.strokeStyle = '#00FF00'; // Bright green
-                            ctx.lineWidth = 4;
-                            ctx.setLineDash([]);
-                            ctx.strokeRect(x1, y1, width, height);
-                            
-                            // Draw semi-transparent green fill for better visibility
-                            ctx.fillStyle = 'rgba(0, 255, 0, 0.1)';
-                            ctx.fillRect(x1, y1, width, height);
+                            // Draw actual contour shape if available (more accurate representation)
+                            if (obj.contour && Array.isArray(obj.contour) && obj.contour.length > 0) {
+                              ctx.beginPath();
+                              ctx.moveTo(obj.contour[0][0], obj.contour[0][1]);
+                              for (let i = 1; i < obj.contour.length; i++) {
+                                ctx.lineTo(obj.contour[i][0], obj.contour[i][1]);
+                              }
+                              ctx.closePath();
+                              
+                              // Draw filled contour with semi-transparent green
+                              ctx.fillStyle = 'rgba(0, 255, 0, 0.15)';
+                              ctx.fill();
+                              
+                              // Draw contour outline with bright green and thick line
+                              ctx.strokeStyle = '#00FF00'; // Bright green
+                              ctx.lineWidth = 4; // Thick line for better visibility
+                              ctx.setLineDash([]);
+                              ctx.stroke();
+                            } else {
+                              // Fallback to bounding box if contour not available
+                              const width = x2 - x1;
+                              const height = y2 - y1;
+                              
+                              // Draw green bounding box with thick line
+                              ctx.strokeStyle = '#00FF00'; // Bright green
+                              ctx.lineWidth = 4;
+                              ctx.setLineDash([]);
+                              ctx.strokeRect(x1, y1, width, height);
+                              
+                              // Draw semi-transparent green fill for better visibility
+                              ctx.fillStyle = 'rgba(0, 255, 0, 0.15)';
+                              ctx.fillRect(x1, y1, width, height);
+                            }
                             
                             // Draw label with confidence
                             if (obj.confidence !== undefined) {
                               const label = `Iron Ore ${obj.id || index + 1} (${Math.round(obj.confidence * 100)}%)`;
-                              const labelWidth = ctx.measureText(label).width + 8;
-                              ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
-                              ctx.fillRect(x1, Math.max(0, y1 - 22), labelWidth, 20);
+                              const labelWidth = ctx.measureText(label).width + 12;
+                              const labelX = Math.max(0, Math.min(x1, imgWidth - labelWidth));
+                              const labelY = Math.max(20, y1);
+                              
+                              // Background for label
+                              ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                              ctx.fillRect(labelX, labelY - 18, labelWidth, 18);
+                              
+                              // Label text in bright green
                               ctx.fillStyle = '#00FF00';
-                              ctx.font = 'bold 12px Arial';
-                              ctx.fillText(label, x1 + 4, Math.max(12, y1 - 6));
+                              ctx.font = 'bold 13px Arial';
+                              ctx.fillText(label, labelX + 6, labelY - 4);
                             }
                           }
                         });

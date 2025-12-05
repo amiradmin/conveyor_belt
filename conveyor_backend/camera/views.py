@@ -568,8 +568,14 @@ class ConveyorAnalysisAPI(APIView):
             return Response({"error": "Internal server error", "details": str(e)}, status=500)
 
     def analyze_objects_with_contours(self, frame):
-        """Enhanced object detection using contour analysis"""
+        """Enhanced object detection using contour analysis - filters objects to belt area only"""
         try:
+            height, width = frame.shape[:2]
+            
+            # First, detect belt area to filter objects
+            belt_area = self.detect_belt_area(frame)
+            belt_x1, belt_y1, belt_x2, belt_y2 = belt_area
+            
             # Convert to grayscale
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
@@ -594,6 +600,32 @@ class ConveyorAnalysisAPI(APIView):
                     # Calculate center
                     center_x = x + w // 2
                     center_y = y + h // 2
+                    
+                    # Filter: Only include objects that are within the belt area
+                    # Check if object center is within belt boundaries with some margin
+                    margin = 20  # pixels margin for objects partially on belt
+                    if not (belt_x1 - margin <= center_x <= belt_x2 + margin and 
+                            belt_y1 - margin <= center_y <= belt_y2 + margin):
+                        continue  # Skip objects outside belt area
+                    
+                    # Additional check: at least 50% of object should be within belt
+                    object_x1, object_y1 = x, y
+                    object_x2, object_y2 = x + w, y + h
+                    
+                    # Calculate overlap area
+                    overlap_x1 = max(object_x1, belt_x1)
+                    overlap_y1 = max(object_y1, belt_y1)
+                    overlap_x2 = min(object_x2, belt_x2)
+                    overlap_y2 = min(object_y2, belt_y2)
+                    
+                    if overlap_x2 > overlap_x1 and overlap_y2 > overlap_y1:
+                        overlap_area = (overlap_x2 - overlap_x1) * (overlap_y2 - overlap_y1)
+                        object_area = w * h
+                        overlap_ratio = overlap_area / object_area if object_area > 0 else 0
+                        
+                        # Only include if at least 50% of object is on belt
+                        if overlap_ratio < 0.5:
+                            continue
 
                     # Calculate confidence based on contour solidity
                     hull = cv2.convexHull(contour)
@@ -601,6 +633,9 @@ class ConveyorAnalysisAPI(APIView):
                     solidity = area / hull_area if hull_area > 0 else 0
                     confidence = min(0.3 + solidity * 0.7, 0.95)  # Scale to 0.3-0.95
 
+                    # Get contour points for drawing actual contour shape
+                    contour_points = contour.reshape(-1, 2).tolist() if len(contour.shape) == 2 else []
+                    
                     object_data = {
                         "id": len(objects) + 1,
                         "bbox": [float(x), float(y), float(x + w), float(y + h)],
@@ -608,7 +643,8 @@ class ConveyorAnalysisAPI(APIView):
                         "size": float(area),
                         "confidence": float(confidence),
                         "label": "Iron Ore",
-                        "color": "#00FF00"  # Default green color
+                        "color": "#00FF00",  # Bright green color
+                        "contour": contour_points  # Add contour points for drawing actual shape
                     }
                     objects.append(object_data)
                     valid_contours.append(contour)
@@ -623,6 +659,39 @@ class ConveyorAnalysisAPI(APIView):
         except Exception as e:
             logger.error(f"Contour analysis error: {str(e)}")
             return {"object_count": 0, "objects": [], "total_area": 0, "average_confidence": 0}
+
+    def detect_belt_area(self, frame):
+        """Detect the belt area in the frame to filter objects - only objects on belt are detected"""
+        try:
+            height, width = frame.shape[:2]
+            
+            # Convert to grayscale
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            
+            # Apply threshold to detect belt (belt is usually darker/lighter than background)
+            _, thresh = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY)
+            
+            # Find contours of belt edges
+            contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            if len(contours) > 0:
+                # Find the largest contour (likely the belt)
+                largest_contour = max(contours, key=cv2.contourArea)
+                x, y, w, h = cv2.boundingRect(largest_contour)
+                
+                # Return belt boundaries (x1, y1, x2, y2)
+                return (x, y, x + w, y + h)
+            else:
+                # Default: assume belt is in center 80% of frame height, full width
+                belt_margin_y = int(height * 0.1)  # 10% margin from top and bottom
+                return (0, belt_margin_y, width, height - belt_margin_y)
+                
+        except Exception as e:
+            logger.error(f"Belt area detection error: {str(e)}")
+            # Fallback: return frame boundaries with margins
+            height, width = frame.shape[:2]
+            belt_margin_y = int(height * 0.1)
+            return (0, belt_margin_y, width, height - belt_margin_y)
 
     def analyze_belt_alignment(self, frame):
         """Analyze belt alignment and center deviation"""

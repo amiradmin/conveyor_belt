@@ -234,7 +234,7 @@
 .videoContainer {
   position: relative;
   margin-bottom: 10px;
-  height: 200px;
+  height: 450px; /* Increased from 200px to 450px for better visibility */
   overflow: hidden;
   background: #000;
 }
