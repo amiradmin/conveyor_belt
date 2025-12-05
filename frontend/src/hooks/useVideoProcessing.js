@@ -487,6 +487,7 @@ export const useVideoProcessing = ({
     showProcessedFeed,
     captureAndProcessFrame,
     toggleVideoProcessing,
+    startRealTimeProcessing, // Export this so we can restart processing directly
     changeProcessingFPS,
     testBackendResponse,
     testCoffeeDetection,

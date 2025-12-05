@@ -8,13 +8,28 @@ export default function ProcessingStatus({
   onStopProcessing,
   onClearResults
 }) {
+  // Extract status message from object or use as string
+  const getStatusMessage = () => {
+    if (typeof processingStatus === 'object' && processingStatus !== null) {
+      const activeJobs = processingStatus.active_jobs || 0;
+      const completedJobs = processingStatus.completed_jobs || 0;
+      if (activeJobs > 0) {
+        return `Processing... ${activeJobs} active job(s)`;
+      } else if (completedJobs > 0) {
+        return `✅ Completed ${completedJobs} job(s)`;
+      }
+      return 'Processing...';
+    }
+    return processingStatus || 'Processing...';
+  };
+
   if (isProcessing) {
     return (
       <div className="processing-status processing">
         <div className="status-icon">⏳</div>
         <div className="status-content">
           <div className="status-title">Video Processing</div>
-          <div className="status-message">{processingStatus}</div>
+          <div className="status-message">{getStatusMessage()}</div>
         </div>
         <button className="stop-btn" onClick={onStopProcessing}>
           <span>⏹️</span>

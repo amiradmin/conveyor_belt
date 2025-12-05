@@ -15,6 +15,7 @@ export default function VideoProcessingSection({
   processedFrame,
   showProcessedFeed,
   toggleVideoProcessing,
+  startRealTimeProcessing = null,
   lastProcessedTime,
   processingFPS = 2,
   frameCount = 0,
@@ -51,33 +52,103 @@ export default function VideoProcessingSection({
       setShowProcessedVideo(false);
       setStreamingMode('frames');
       autoStartedRef.current = false; // Reset flag when processing starts
+      // Keep the processed feed card visible during processing
+      // Don't hide it - just show loading state
     } else if (activeJobs === 0 && completedJobs > 0 && !autoStartedRef.current) {
       setIsProcessing(false);
       autoStartedRef.current = true; // Mark as auto-started
       
+      console.log('Video processing completed, preparing to auto-start frame capture', {
+        hasVideoRef: !!videoRef,
+        hasVideoElement: !!(videoRef && videoRef.current),
+        videoReadyState: videoRef?.current?.readyState,
+        showProcessedFeed,
+        hasToggleFunction: !!toggleVideoProcessing
+      });
+      
       // After processing completes, automatically start capturing frames if video is available
       if (videoRef && videoRef.current && toggleVideoProcessing) {
+        // Ensure video is playing
+        const ensureVideoPlaying = () => {
+          if (videoRef.current && videoRef.current.paused) {
+            videoRef.current.play().catch(err => {
+              console.warn('Auto-play prevented, will try again:', err);
+            });
+          }
+        };
+        
         // Small delay to ensure video is ready, then start processing
         const timeoutId = setTimeout(() => {
-          // Only start if not already processing and video is ready
-          if (!showProcessedFeed && videoRef.current && videoRef.current.readyState >= 2) {
-            console.log('Auto-starting frame capture after video processing completes');
-            toggleVideoProcessing();
-          } else if (videoRef.current && videoRef.current.readyState < 2) {
-            // Wait for video to be ready
-            const checkReady = setInterval(() => {
-              if (videoRef.current && videoRef.current.readyState >= 2 && !showProcessedFeed) {
-                console.log('Video ready, auto-starting frame capture');
-                toggleVideoProcessing();
-                clearInterval(checkReady);
+          ensureVideoPlaying();
+          
+          // Check if showProcessedFeed is false - if so, toggle it on
+          // If it's already true, we need to restart processing (toggle off then on)
+          if (!showProcessedFeed) {
+            // Check if video is ready
+            if (videoRef.current && videoRef.current.readyState >= 2) {
+              console.log('Video ready, auto-starting frame capture (showProcessedFeed was false)');
+              toggleVideoProcessing();
+            } else {
+              // Wait for video to be ready
+              console.log('Video not ready yet, waiting...');
+              let attempts = 0;
+              const maxAttempts = 25; // 5 seconds max (25 * 200ms)
+              const checkReady = setInterval(() => {
+                attempts++;
+                if (videoRef.current && videoRef.current.readyState >= 2) {
+                  console.log('Video ready after waiting, auto-starting frame capture');
+                  ensureVideoPlaying();
+                  toggleVideoProcessing();
+                  clearInterval(checkReady);
+                } else if (attempts >= maxAttempts) {
+                  console.warn('Video did not become ready in time, starting anyway');
+                  ensureVideoPlaying();
+                  toggleVideoProcessing();
+                  clearInterval(checkReady);
+                }
+              }, 200);
+            }
+          } else {
+            // showProcessedFeed is already true, but processing might have been stopped
+            // We can directly start processing without toggling
+            console.log('showProcessedFeed is already true, restarting processing directly');
+            ensureVideoPlaying();
+            // Use startRealTimeProcessing directly if available, otherwise toggle
+            if (startRealTimeProcessing) {
+              if (videoRef.current && videoRef.current.readyState >= 2) {
+                console.log('Video ready, restarting frame capture directly');
+                startRealTimeProcessing();
+              } else {
+                // Wait for video to be ready
+                const waitForVideo = setInterval(() => {
+                  if (videoRef.current && videoRef.current.readyState >= 2) {
+                    clearInterval(waitForVideo);
+                    console.log('Video ready, restarting frame capture directly');
+                    startRealTimeProcessing();
+                  }
+                }, 100);
+                // Clear after 3 seconds
+                setTimeout(() => clearInterval(waitForVideo), 3000);
               }
-            }, 200);
-            // Clear interval after 5 seconds if video doesn't become ready
-            setTimeout(() => clearInterval(checkReady), 5000);
+            } else {
+              // Fallback to toggle method if startRealTimeProcessing not available
+              console.log('startRealTimeProcessing not available, using toggle method');
+              toggleVideoProcessing(); // Turn off
+              setTimeout(() => {
+                toggleVideoProcessing(); // Turn back on
+              }, 200);
+            }
           }
-        }, 1000);
+        }, 1500); // Increased delay to 1.5 seconds
         return () => clearTimeout(timeoutId);
+      } else {
+        console.warn('Cannot auto-start: missing videoRef or toggleVideoProcessing', {
+          hasVideoRef: !!videoRef,
+          hasVideoElement: !!(videoRef && videoRef.current),
+          hasToggleFunction: !!toggleVideoProcessing
+        });
       }
+      
       if (processedVideoUrl) {
         setStreamingMode('video');
         setShowProcessedVideo(true);
@@ -397,8 +468,8 @@ export default function VideoProcessingSection({
           </div>
         </div>
 
-        {/* AI Processed Feed */}
-        {showProcessedFeed && (
+        {/* AI Processed Feed - Show during processing or when feed is active */}
+        {(showProcessedFeed || isProcessing || (processingStatus && typeof processingStatus === 'object' && (processingStatus.active_jobs > 0 || processingStatus.completed_jobs > 0))) && (
           <div className={`${styles.videoCard} ${styles.processedFeed}`}>
             <div className={styles.cardHeader}>
               <h4>
@@ -780,8 +851,8 @@ export default function VideoProcessingSection({
         </button>
       </div>
 
-      {/* Status Panel */}
-      {showProcessedFeed && (
+      {/* Status Panel - Show during processing or when feed is active */}
+      {(showProcessedFeed || isProcessing || (processingStatus && typeof processingStatus === 'object' && (processingStatus.active_jobs > 0 || processingStatus.completed_jobs > 0))) && (
         <div className={styles.statusPanel}>
           <div className={styles.statusHeader}>
             <h4>Processing Status</h4>

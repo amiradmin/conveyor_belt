@@ -78,6 +78,7 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
     showProcessedFeed,
     captureAndProcessFrame,
     toggleVideoProcessing,
+    startRealTimeProcessing,
     changeProcessingFPS,
     testBackendResponse,
     testCoffeeDetection
@@ -292,6 +293,7 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
             processedFrame={processedFrame}
             showProcessedFeed={showProcessedFeed}
             toggleVideoProcessing={toggleVideoProcessing}
+            startRealTimeProcessing={startRealTimeProcessing}
             lastProcessedTime={lastProcessedTime}
             processingFPS={processingFPS}
             frameCount={frameCount}
@@ -302,22 +304,6 @@ export default function ConveyorSimulator({ beltId = 1, apiBase = 'http://localh
         )}
 
         {/* Processing Status */}
-        <ProcessingStatus
-          isProcessing={isProcessing}
-          processingStatus={processingStatus}
-          analysisResults={analysisResultsState}
-          onStopProcessing={() => {
-            setIsProcessingState(false);
-            if (pollingIntervalRef.current) {
-              clearInterval(pollingIntervalRef.current);
-              pollingIntervalRef.current = null;
-            }
-            setProcessingStatus('Processing stopped by user');
-          }}
-          onClearResults={() => setAnalysisResultsState(null)}
-          currentFPS={currentFPS}
-          frameCount={frameCount}
-        />
 
         {/* Results Visualization */}
         {analysisResultsState?.details && (
