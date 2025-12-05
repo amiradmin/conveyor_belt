@@ -97,10 +97,70 @@
 /* SVG Styling Enhancements */
 .conveyor-visualization-container svg {
   filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.3));
+  background: linear-gradient(180deg, #0a0a0a 0%, #1a1a1a 50%, #0a0a0a 100%);
+  border-radius: 8px;
+  padding: 20px;
 }
 
 .conveyor-visualization-container svg text {
   font-family: 'Vazirmatn', 'Segoe UI', sans-serif;
   font-weight: 500;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+/* Roller group styling */
+.roller-group {
+  transition: transform 0.2s;
+}
+
+.roller-group:hover {
+  transform: scale(1.05);
+}
+
+/* Belt group animation */
+.belt-group {
+  transition: transform 0.1s linear;
+}
+
+/* Sensor group styling */
+.sensor-group {
+  transition: all 0.2s;
+}
+
+.sensor-group:hover {
+  transform: translateY(-2px);
+}
+
+/* Camera group styling */
+.camera-group {
+  transition: all 0.2s;
+}
+
+.camera-group:hover {
+  transform: scale(1.1);
+}
+
+/* Iron Ore object styling */
+.iron-ore-object {
+  transition: all 0.1s ease-out;
+}
+
+.iron-ore-object:hover {
+  transform: scale(1.1);
+  filter: drop-shadow(0 0 8px rgba(255, 204, 0, 0.5));
+}
+
+/* Motor group styling */
+.motor-group {
+  transition: all 0.2s;
+}
+
+.motor-group:hover {
+  transform: scale(1.05);
+}
+
+/* Support frame styling */
+.support-frame {
+  opacity: 0.6;
 }
 

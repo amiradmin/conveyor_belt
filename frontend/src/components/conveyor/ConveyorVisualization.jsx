@@ -11,12 +11,34 @@ export default function ConveyorVisualization({
   onSensorDrag,
   onCameraClick
 }) {
-
   const motorStatus = plc?.outputs?.motor_on ? 'ON' : 'OFF';
+  const beltLength = style?.style.belt_length || 800;
+  const beltWidth = style?.style.belt_width || 30;
+  const rollerCount = style?.style.roller_count || 8;
+  
   // Use the running/stopped color based on motor status
   const beltColor = motorStatus === 'ON'
     ? (style?.style.belt_running_color || '#4CAF50')
-    : (style?.style.belt_stopped_color || style?.style.belt_color || "#5a5a5a");
+    : (style?.style.belt_stopped_color || style?.style.belt_color || "#333333");
+  
+  const motorColor = style?.style.motor_color || "#263238";
+  const rollerColor = style?.style.roller_color || "#5D4037";
+  const objectColor = style?.style.object_color || "#8B4513";
+  const sensorColor = style?.sensor_color || style?.style.sensor_color || "#ffcc00";
+  const sensor2Color = style?.sensor_2_color || style?.style.sensor_2_color || "#ffaa00";
+  const cameraColor = style?.style.camera_color || "#ffcc00";
+  const cameraLedColor = style?.style.camera_led_color || "#0080FF";
+  const sensorLedColor = style?.style.sensor_led_color || "#FF9800";
+  
+  const sensor1X = style?.sensor_x || style?.style.sensor_x || 300;
+  const sensor2X = style?.sensor_2_x || style?.style.sensor_2_x || 600;
+  const cameraX = style?.style.camera_x || 50;
+  const cameraY = style?.style.camera_y || 20;
+  
+  const svgHeight = 280;
+  const beltY = 140;
+  const rollerY = beltY + beltWidth + 15;
+  const frameY = rollerY + 20;
 
   return (
     <div className="conveyor-visualization-container">
@@ -25,80 +47,318 @@ export default function ConveyorVisualization({
         <span className="badge-value">{style?.style.id || 'local'}</span>
       </div>
 
-      <svg width={(style?.style.belt_length || 800) + 100} height={220} style={{ display: 'block', margin: '0 auto' }}>
-        {/* Belt Surface */}
+      <svg 
+        width={beltLength + 120} 
+        height={svgHeight} 
+        style={{ display: 'block', margin: '0 auto' }}
+        viewBox={`0 0 ${beltLength + 120} ${svgHeight}`}
+        preserveAspectRatio="xMidYMid meet"
+      >
         <defs>
-          <pattern id="beltPattern" width="80" height={style?.style.belt_width || 30} patternUnits="userSpaceOnUse">
-            <rect width="80" height={style?.style.belt_width || 30} fill={beltColor} />
-            <line x1="0" y1={(style?.style.belt_width || 30)/2} x2="80" y2={(style?.style.belt_width || 30)/2} stroke="#444" strokeWidth="1" />
+          {/* Belt pattern with texture */}
+          <pattern id="beltPattern" width="80" height={beltWidth} patternUnits="userSpaceOnUse">
+            <rect width="80" height={beltWidth} fill={beltColor} />
+            <line x1="0" y1={beltWidth/2} x2="80" y2={beltWidth/2} 
+              stroke="rgba(0,0,0,0.3)" strokeWidth="1" />
+            <line x1="0" y1={beltWidth/4} x2="80" y2={beltWidth/4} 
+              stroke="rgba(0,0,0,0.15)" strokeWidth="0.5" />
+            <line x1="0" y1={beltWidth*3/4} x2="80" y2={beltWidth*3/4} 
+              stroke="rgba(0,0,0,0.15)" strokeWidth="0.5" />
           </pattern>
+          
+          {/* Gradient for belt depth */}
+          <linearGradient id="beltGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor={beltColor} stopOpacity="1" />
+            <stop offset="50%" stopColor={beltColor} stopOpacity="0.9" />
+            <stop offset="100%" stopColor="rgba(0,0,0,0.3)" stopOpacity="0.8" />
+          </linearGradient>
+          
+          {/* Roller gradient for 3D effect */}
+          <radialGradient id="rollerGradient" cx="50%" cy="30%">
+            <stop offset="0%" stopColor="#888" stopOpacity="1" />
+            <stop offset="50%" stopColor={rollerColor} stopOpacity="1" />
+            <stop offset="100%" stopColor="#222" stopOpacity="1" />
+          </radialGradient>
+          
+          {/* Motor gradient */}
+          <linearGradient id="motorGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#555" stopOpacity="1" />
+            <stop offset="50%" stopColor={motorColor} stopOpacity="1" />
+            <stop offset="100%" stopColor="#111" stopOpacity="1" />
+          </linearGradient>
+          
+          {/* Object shadow */}
+          <filter id="objectShadow">
+            <feGaussianBlur in="SourceAlpha" stdDeviation="2"/>
+            <feOffset dx="2" dy="2" result="offsetblur"/>
+            <feComponentTransfer>
+              <feFuncA type="linear" slope="0.3"/>
+            </feComponentTransfer>
+            <feMerge>
+              <feMergeNode/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+          
+          {/* Sensor glow */}
+          <filter id="sensorGlow">
+            <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+            <feMerge>
+              <feMergeNode in="coloredBlur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+          
+          {/* Camera glow */}
+          <filter id="cameraGlow">
+            <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+            <feMerge>
+              <feMergeNode in="coloredBlur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
         </defs>
 
-        <g transform={`translate(${offset}, 0)`}>
-          <rect x={50} y={100} width={style?.style.belt_length || 800} height={style?.style.belt_width || 30}
-            fill="url(#beltPattern)" rx={6} stroke="#555" strokeWidth="2" />
+        {/* Support Frame Structure */}
+        <g className="support-frame">
+          {/* Main frame rails */}
+          <rect x={40} y={frameY} width={beltLength + 20} height={8} 
+            fill="#1a1a1a" rx={4} stroke="#333" strokeWidth="1" />
+          <rect x={40} y={frameY + 8} width={beltLength + 20} height={4} 
+            fill="#0a0a0a" rx={2} />
+          
+          {/* Vertical supports */}
+          {[0, beltLength + 20].map((offset, i) => (
+            <rect key={i} x={40 + offset} y={beltY - 20} width={6} height={frameY - beltY + 30} 
+              fill="#1a1a1a" rx={2} stroke="#333" strokeWidth="0.5" />
+          ))}
         </g>
 
-        {/* Rollers */}
-        {Array.from({ length: style?.style.roller_count || 8 }).map((_, i) => (
-          <circle key={i}
-            cx={50 + i * ((style?.style.belt_length || 800) / ((style?.roller_count || 8) - 1))}
-            cy={115 + (style?.style.belt_width || 30) / 2}
-            r={10}
-            fill={style?.style.roller_color || "#444"}
-          />
-        ))}
+        {/* Rollers - More realistic cylindrical appearance */}
+        {Array.from({ length: rollerCount }).map((_, i) => {
+          const rollerX = 50 + i * (beltLength / (rollerCount - 1));
+          return (
+            <g key={i} className="roller-group">
+              {/* Roller shadow */}
+              <ellipse cx={rollerX} cy={rollerY + 2} rx={12} ry={4} 
+                fill="rgba(0,0,0,0.4)" opacity="0.5" />
+              
+              {/* Roller body - cylindrical */}
+              <ellipse cx={rollerX} cy={rollerY - 8} rx={12} ry={4} 
+                fill={rollerColor} opacity="0.6" />
+              <rect x={rollerX - 12} y={rollerY - 8} width={24} height={16} 
+                fill="url(#rollerGradient)" rx={12} />
+              <ellipse cx={rollerX} cy={rollerY + 8} rx={12} ry={4} 
+                fill="#222" opacity="0.8" />
+              
+              {/* Roller center shaft */}
+              <circle cx={rollerX} cy={rollerY} r="3" fill="#111" />
+              <circle cx={rollerX} cy={rollerY} r="1.5" fill="#666" />
+            </g>
+          );
+        })}
 
-        {/* Objects */}
+        {/* Belt Surface - More realistic with depth */}
+        <g className="belt-group" transform={`translate(${offset}, 0)`}>
+          {/* Belt shadow */}
+          <rect x={50} y={beltY + beltWidth + 2} width={beltLength} height={beltWidth} 
+            fill="rgba(0,0,0,0.3)" rx={6} opacity="0.5" />
+          
+          {/* Belt top surface */}
+          <rect x={50} y={beltY} width={beltLength} height={beltWidth}
+            fill="url(#beltPattern)" rx={6} 
+            stroke="#222" strokeWidth="2" />
+          
+          {/* Belt side depth effect */}
+          <rect x={50} y={beltY + beltWidth} width={beltLength} height={4}
+            fill="url(#beltGradient)" rx={2} />
+        </g>
+
+        {/* Iron Ore Objects - More realistic with shadows */}
         {objects.map(o => (
-          <rect key={o.id} x={o.x} y={105} width={20} height={20} rx={3} fill={style?.style.object_color || "#8b4513"} />
+          <g key={o.id} filter="url(#objectShadow)" className="iron-ore-object">
+            {/* Object shadow */}
+            <ellipse cx={o.x + 10} cy={beltY + beltWidth + 2} rx={8} ry={3} 
+              fill="rgba(0,0,0,0.4)" opacity="0.6" />
+            
+            {/* Object body - more realistic shape */}
+            <ellipse cx={o.x + 10} cy={beltY + beltWidth/2 - 2} rx={10} ry={6} 
+              fill={objectColor} opacity="0.7" />
+            <rect x={o.x} y={beltY + beltWidth/2 - 6} width={20} height={12} 
+              fill={objectColor} rx={4} />
+            <ellipse cx={o.x + 10} cy={beltY + beltWidth/2 + 6} rx={10} ry={6} 
+              fill="#5a2a0a" opacity="0.8" />
+            
+            {/* Object highlight */}
+            <ellipse cx={o.x + 8} cy={beltY + beltWidth/2 - 4} rx={4} ry={2} 
+              fill="rgba(255,255,255,0.2)" />
+          </g>
         ))}
 
-        {/* Sensors */}
-        <DraggableCore axis="x" onDrag={d => onSensorDrag('s1', d)} bounds={{ left: 50, right: 50 + (style?.style.belt_length || 800) }}>
-          <g style={{ cursor: 'grab' }}>
-            <rect x={(style?.sensor_x || 300) - 5} y={90} width={10} height={50}
-              fill={style?.sensor_color || "yellow"} stroke="#333" />
-            <circle cx={style?.sensor_x || 300} cy={95} r="3"
-              fill={plc?.inputs?.sensor_1 ? (style?.sensor_led_color || "red") : "#666"} />
-            <text x={style?.sensor_x || 300} y={145} textAnchor="middle" fontSize="10" fill="white">
+        {/* Sensor 1 - More industrial look */}
+        <DraggableCore 
+          axis="x" 
+          onDrag={d => onSensorDrag('s1', d)} 
+          bounds={{ left: 50, right: 50 + beltLength }}
+        >
+          <g className="sensor-group" style={{ cursor: 'grab' }} filter="url(#sensorGlow)">
+            {/* Sensor mounting bracket */}
+            <rect x={sensor1X - 8} y={beltY - 35} width={16} height={8} 
+              fill="#2a2a2a" rx={2} stroke="#444" strokeWidth="1" />
+            
+            {/* Sensor body */}
+            <rect x={sensor1X - 6} y={beltY - 27} width={12} height={20} 
+              fill={sensorColor} rx={2} stroke="#333" strokeWidth="1.5" />
+            
+            {/* Sensor LED indicator */}
+            <circle cx={sensor1X} cy={beltY - 20} r="4"
+              fill={plc?.inputs?.sensor_1 ? sensorLedColor : "#333"}
+              opacity={plc?.inputs?.sensor_1 ? 1 : 0.3}
+              style={{ 
+                filter: plc?.inputs?.sensor_1 ? 'drop-shadow(0 0 4px ' + sensorLedColor + ')' : 'none',
+                transition: 'all 0.2s'
+              }} />
+            
+            {/* Sensor detection beam */}
+            {plc?.inputs?.sensor_1 && (
+              <line x1={sensor1X} y1={beltY - 7} x2={sensor1X} y2={beltY + beltWidth + 5}
+              stroke={sensorLedColor} strokeWidth="2" opacity="0.6" strokeDasharray="4,2" />
+            )}
+            
+            {/* Sensor label */}
+            <text x={sensor1X} y={beltY + beltWidth + 25} textAnchor="middle" 
+              fontSize="11" fill="#ffcc00" fontWeight="600" fontFamily="Vazirmatn, sans-serif">
               S1
             </text>
           </g>
         </DraggableCore>
 
-        <DraggableCore axis="x" onDrag={d => onSensorDrag('s2', d)} bounds={{ left: 50, right: 50 + (style?.belt_length || 800) }}>
-          <g style={{ cursor: 'grab' }}>
-            <rect x={(style?.sensor_2_x || 600) - 5} y={90} width={10} height={50}
-              fill={style?.sensor_2_color || "orange"} stroke="#333" />
-            <circle cx={style?.sensor_2_x || 600} cy={95} r="3"
-              fill={plc?.inputs?.sensor_2 ? (style?.sensor_led_color || "red") : "#666"} />
-            <text x={style?.sensor_2_x || 600} y={145} textAnchor="middle" fontSize="10" fill="white">
+        {/* Sensor 2 - More industrial look */}
+        <DraggableCore 
+          axis="x" 
+          onDrag={d => onSensorDrag('s2', d)} 
+          bounds={{ left: 50, right: 50 + beltLength }}
+        >
+          <g className="sensor-group" style={{ cursor: 'grab' }} filter="url(#sensorGlow)">
+            {/* Sensor mounting bracket */}
+            <rect x={sensor2X - 8} y={beltY - 35} width={16} height={8} 
+              fill="#2a2a2a" rx={2} stroke="#444" strokeWidth="1" />
+            
+            {/* Sensor body */}
+            <rect x={sensor2X - 6} y={beltY - 27} width={12} height={20} 
+              fill={sensor2Color} rx={2} stroke="#333" strokeWidth="1.5" />
+            
+            {/* Sensor LED indicator */}
+            <circle cx={sensor2X} cy={beltY - 20} r="4"
+              fill={plc?.inputs?.sensor_2 ? sensorLedColor : "#333"}
+              opacity={plc?.inputs?.sensor_2 ? 1 : 0.3}
+              style={{ 
+                filter: plc?.inputs?.sensor_2 ? 'drop-shadow(0 0 4px ' + sensorLedColor + ')' : 'none',
+                transition: 'all 0.2s'
+              }} />
+            
+            {/* Sensor detection beam */}
+            {plc?.inputs?.sensor_2 && (
+              <line x1={sensor2X} y1={beltY - 7} x2={sensor2X} y2={beltY + beltWidth + 5}
+              stroke={sensorLedColor} strokeWidth="2" opacity="0.6" strokeDasharray="4,2" />
+            )}
+            
+            {/* Sensor label */}
+            <text x={sensor2X} y={beltY + beltWidth + 25} textAnchor="middle" 
+              fontSize="11" fill="#ffcc00" fontWeight="600" fontFamily="Vazirmatn, sans-serif">
               S2
             </text>
           </g>
         </DraggableCore>
 
-        {/* Motor */}
-        <rect x={(style?.style.belt_length || 800) - 30} y={80} width={30} height={40}
-          fill={style?.style.motor_color || "#222"} stroke="#666" strokeWidth="1" />
-        <circle cx={(style?.style.belt_length || 800) - 15} cy={100} r="8"
-          fill="#666"
-          style={{ animation: motorStatus === 'ON' ? 'rotate 2s linear infinite' : 'none' }} />
-        <text x={(style?.style.belt_length || 800) - 15} y={75} textAnchor="middle" fontSize="10" fill="white">
-          Motor
-        </text>
-
-        {/* Camera - positioned according to style */}
-        <g onClick={onCameraClick} style={{ cursor: 'pointer' }}>
-          <rect x={style?.style.camera_x || 50} y={style?.style.camera_y || 10} width={30} height={20}
-            fill={style?.style.camera_color || "#0080ff"} rx={4} />
-          <circle cx={(style?.style.camera_x || 50) + 22} cy={(style?.style.camera_y || 10) + 10} r="4" fill="#000" />
-          <circle cx={(style?.style.camera_x || 50) + 22} cy={(style?.style.camera_y || 10) + 10} r="2"
-            fill={style?.style.camera_led_color || "#0080FF"} />
-          <text x={style?.style.camera_x || 50} y={(style?.style.camera_y || 10) - 5} fontSize="10" fill={style?.style.camera_color || "#0080ff"}>
-            Cam
+        {/* Motor - More realistic industrial motor */}
+        <g className="motor-group">
+          {/* Motor shadow */}
+          <ellipse cx={50 + beltLength - 15} cy={beltY - 10 + 5} rx={20} ry={8} 
+            fill="rgba(0,0,0,0.4)" opacity="0.5" />
+          
+          {/* Motor body - 3D effect */}
+          <rect x={50 + beltLength - 40} y={beltY - 30} width={40} height={30} 
+            fill="url(#motorGradient)" rx={4} stroke="#111" strokeWidth="2" />
+          
+          {/* Motor top */}
+          <ellipse cx={50 + beltLength - 20} cy={beltY - 30} rx={20} ry={8} 
+            fill="#333" opacity="0.8" />
+          
+          {/* Motor shaft/pulley */}
+          <circle cx={50 + beltLength - 20} cy={beltY - 10} r="12"
+            fill="#1a1a1a" stroke="#333" strokeWidth="2" />
+          
+          {/* Rotating pulley when motor is ON */}
+          <g transform={`translate(${50 + beltLength - 20}, ${beltY - 10})`}>
+            <circle r="10" fill="#2a2a2a" stroke="#444" strokeWidth="1" />
+            <circle r="6" fill="#1a1a1a" />
+            {motorStatus === 'ON' && (
+              <g className="rotating-pulley" style={{ animation: 'rotate 1s linear infinite' }}>
+                <line x1="0" y1="-10" x2="0" y2="10" stroke="#666" strokeWidth="1.5" />
+                <line x1="-10" y1="0" x2="10" y2="0" stroke="#666" strokeWidth="1.5" />
+              </g>
+            )}
+          </g>
+          
+          {/* Motor status indicator */}
+          <circle cx={50 + beltLength - 10} cy={beltY - 25} r="3"
+            fill={motorStatus === 'ON' ? '#4CAF50' : '#666'}
+            style={{ 
+              filter: motorStatus === 'ON' ? 'drop-shadow(0 0 4px #4CAF50)' : 'none',
+              transition: 'all 0.2s'
+            }} />
+          
+          {/* Motor label */}
+          <text x={50 + beltLength - 20} y={beltY - 45} textAnchor="middle" 
+            fontSize="10" fill="#ffcc00" fontWeight="600" fontFamily="Vazirmatn, sans-serif">
+            Motor
           </text>
+          <text x={50 + beltLength - 20} y={beltY - 35} textAnchor="middle" 
+            fontSize="9" fill={motorStatus === 'ON' ? '#4CAF50' : '#999'} 
+            fontWeight="500" fontFamily="Vazirmatn, sans-serif">
+            {motorStatus}
+          </text>
+        </g>
+
+        {/* Camera - More realistic industrial camera */}
+        <g className="camera-group" onClick={onCameraClick} style={{ cursor: 'pointer' }} filter="url(#cameraGlow)">
+          {/* Camera mounting bracket */}
+          <rect x={cameraX - 2} y={cameraY + 18} width={34} height={6} 
+            fill="#2a2a2a" rx={2} stroke="#444" strokeWidth="1" />
+          
+          {/* Camera body */}
+          <rect x={cameraX} y={cameraY} width={30} height={20} 
+            fill={cameraColor} rx={3} stroke="#333" strokeWidth="1.5" />
+          
+          {/* Camera lens housing */}
+          <circle cx={cameraX + 22} cy={cameraY + 10} r="8" 
+            fill="#1a1a1a" stroke="#000" strokeWidth="2" />
+          
+          {/* Camera lens */}
+          <circle cx={cameraX + 22} cy={cameraY + 10} r="5" 
+            fill="#000" />
+          <circle cx={cameraX + 22} cy={cameraY + 10} r="3" 
+            fill="rgba(100,150,255,0.3)" />
+          
+          {/* Camera LED indicator */}
+          <circle cx={cameraX + 8} cy={cameraY + 6} r="2"
+            fill={cameraLedColor}
+            style={{ 
+              filter: 'drop-shadow(0 0 3px ' + cameraLedColor + ')',
+              animation: 'pulse 2s ease-in-out infinite'
+            }} />
+          
+          {/* Camera label */}
+          <text x={cameraX + 15} y={cameraY - 5} textAnchor="middle" 
+            fontSize="9" fill={cameraColor} fontWeight="600" fontFamily="Vazirmatn, sans-serif">
+            CAM
+          </text>
+          
+          {/* Camera view angle indicator */}
+          <path d={`M ${cameraX + 22} ${cameraY + 10} L ${50} ${beltY} L ${50 + beltLength} ${beltY} Z`}
+            fill="rgba(255,204,0,0.1)" stroke={cameraColor} strokeWidth="1" 
+            strokeDasharray="3,3" opacity="0.3" />
         </g>
       </svg>
 
@@ -107,29 +367,53 @@ export default function ConveyorVisualization({
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
         }
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+        .rotating-pulley {
+          transform-origin: center;
+        }
+        .sensor-group:hover {
+          opacity: 0.8;
+        }
+        .camera-group:hover {
+          opacity: 0.9;
+        }
+        .iron-ore-object {
+          transition: transform 0.1s ease-out;
+        }
       `}</style>
 
       {/* Style Info */}
       <div className="visualization-info">
         <div className="info-row">
           <span className="info-label">ابعاد نوار:</span>
-          <span className="info-text">{style?.style.belt_length || 800}px × {style?.style.belt_width || 30}px</span>
+          <span className="info-text">{beltLength}px × {beltWidth}px</span>
         </div>
         <div className="info-row">
           <span className="info-label">رنگ:</span>
-          <span className="info-color" style={{ color: style?.style.belt_color || "#5a5a5a" }}>■ {style?.style.belt_color || '#5a5a5a'}</span>
+          <span className="info-color" style={{ color: style?.style.belt_color || "#333333" }}>
+            ■ {style?.style.belt_color || '#333333'}
+          </span>
         </div>
         <div className="info-row">
           <span className="info-label">تعداد غلطک:</span>
-          <span className="info-text">{style?.style.roller_count || 8}</span>
+          <span className="info-text">{rollerCount}</span>
         </div>
         <div className="info-row">
           <span className="info-label">موتور:</span>
-          <span className="info-color" style={{ color: style?.style.motor_color || "#222" }}>■</span>
+          <span className="info-text" style={{ color: motorStatus === 'ON' ? '#4CAF50' : '#999' }}>
+            {motorStatus}
+          </span>
         </div>
         <div className="info-row">
           <span className="info-label">دوربین:</span>
-          <span className="info-text">{style?.style.camera_x || 50}, {style?.style.camera_y || 10}</span>
+          <span className="info-text">{cameraX}, {cameraY}</span>
+        </div>
+        <div className="info-row">
+          <span className="info-label">سنسورها:</span>
+          <span className="info-text">S1: {sensor1X}px, S2: {sensor2X}px</span>
         </div>
       </div>
     </div>
