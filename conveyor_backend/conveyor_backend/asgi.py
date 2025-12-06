@@ -14,16 +14,17 @@ from django.core.asgi import get_asgi_application
 from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.auth import AuthMiddlewareStack
 from camera import routing as camera_routing
+from vision import routing as vision_routing   # NEW
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'conveyor_backend.settings')
 
 application = ProtocolTypeRouter({
     "http": get_asgi_application(),
 
-    # WebSocket support with authentication middleware
     "websocket": AuthMiddlewareStack(
         URLRouter(
-            camera_routing.websocket_urlpatterns
+            camera_routing.websocket_urlpatterns +
+            vision_routing.websocket_urlpatterns
         )
     ),
 })

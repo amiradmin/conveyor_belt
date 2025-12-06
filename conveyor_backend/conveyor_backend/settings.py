@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     'django_extensions',
     "channels",
     "lab",
+    "vision"
 ]
 
 MIDDLEWARE = [
