@@ -7,6 +7,7 @@ from channels.layers import get_channel_layer
 from django.conf import settings
 from vision.models import ProcessingJob, Detection, VideoFile
 import numpy as np
+import base64
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +41,6 @@ class BeltProcessor:
             frame_no = 0
             processed = 0
 
-            # optional: warm up YOLO or any model here
-            # e.g. model = YOLO(settings.YOLO_WEIGHTS_PATH)
             while True:
                 ret, frame = cap.read()
                 if not ret:
@@ -53,20 +52,25 @@ class BeltProcessor:
                     continue
                 processed += 1
 
-                # Simple contour detection example (replace with your detection)
+                # Convert to grayscale and detect edges
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 blur = cv2.GaussianBlur(gray, (5,5), 0)
                 edges = cv2.Canny(blur, 50, 150)
                 contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
                 object_count = 0
                 last_bbox = None
                 for cnt in contours:
                     area = cv2.contourArea(cnt)
                     if area < 100:
                         continue
-                    x,y,w,h = cv2.boundingRect(cnt)
+                    x, y, w, h = cv2.boundingRect(cnt)
                     object_count += 1
-                    bbox = [int(x),int(y),int(x+w),int(y+h)]
+                    bbox = [int(x), int(y), int(x+w), int(y+h)]
+
+                    # Draw rectangle on frame for visualization
+                    cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+
                     # save detection row
                     job_db_id = self.jobs.get(job_id)
                     if job_db_id:
@@ -78,6 +82,10 @@ class BeltProcessor:
                             confidence=0.5
                         )
                     last_bbox = bbox
+
+                # Encode frame to JPEG and convert to base64
+                _, buffer = cv2.imencode('.jpg', frame)
+                frame_base64 = base64.b64encode(buffer).decode('utf-8')
 
                 progress = int((frame_no / total_frames) * 100)
                 # update DB job
@@ -92,6 +100,7 @@ class BeltProcessor:
                             "frame": frame_no,
                             "object_count": object_count,
                             "progress": progress,
+                            "frame_image": frame_base64,  # send frame to frontend
                             "is_final": False
                         }
                     )
@@ -115,6 +124,7 @@ class BeltProcessor:
                     "frame": frame_no,
                     "object_count": object_count if 'object_count' in locals() else 0,
                     "progress": 100,
+                    "frame_image": frame_base64 if 'frame_base64' in locals() else None,
                     "is_final": True
                 }
             )
@@ -125,7 +135,7 @@ class BeltProcessor:
             try:
                 async_to_sync(channel_layer.group_send)(
                     "frame_progress",
-                    {"type":"error_message", "error": str(e)}
+                    {"type": "error_message", "error": str(e)}
                 )
             except Exception:
                 logger.exception("WS error send failed")

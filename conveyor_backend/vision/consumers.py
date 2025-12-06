@@ -16,16 +16,13 @@ class FrameProgressConsumer(AsyncJsonWebsocketConsumer):
         logger.info(f"WebSocket disconnected: {self.channel_name}")
 
     async def progress_message(self, event):
-        """
-        Receives 'progress_message' from BeltProcessor
-        and sends to WebSocket frontend
-        """
         await self.send_json({
             "type": "progress",
             "frame": event.get("frame"),
             "object_count": event.get("object_count"),
             "progress": event.get("progress"),
-            "is_final": event.get("is_final", False)
+            "is_final": event.get("is_final", False),
+            "frame_image": event.get("frame_image")  # base64 JPEG string
         })
 
     async def error_message(self, event):
