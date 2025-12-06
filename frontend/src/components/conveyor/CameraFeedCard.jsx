@@ -1,12 +1,13 @@
 import React from 'react';
 import styles from './VideoProcessingSection.module.css';
 
-const VideoFeedCard = ({
+const CameraFeedCard = ({
   cameraUrl,
   videoRef,
   setShowVideoModal,
   toggleVideoProcessing,
-  showProcessedFeed
+  showProcessedFeed,
+  takeSnapshot
 }) => {
   return (
     <div className={styles.videoCard}>
@@ -46,11 +47,8 @@ const VideoFeedCard = ({
           muted
           playsInline
           crossOrigin="anonymous"
-          onLoadedData={() => console.log('Video loaded and ready')}
-          onError={(e) => {
-            console.error('Video loading error:', e);
-            console.log('Video source:', cameraUrl || 'http://localhost:8000/media/3.mp4');
-          }}
+          onLoadedData={() => console.log('Original video loaded')}
+          onError={(e) => console.error('Original video error:', e)}
         />
         <button
           className={styles.expandBtn}
@@ -75,4 +73,4 @@ const VideoFeedCard = ({
   );
 };
 
-export default VideoFeedCard;
+export default CameraFeedCard;

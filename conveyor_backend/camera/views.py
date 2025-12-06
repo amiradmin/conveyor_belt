@@ -10,7 +10,8 @@ import random
 from ultralytics import YOLO
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
-from .services.video_processor import video_processor
+from camera.services.video_processor import video_processor
+from django.views.decorators.csrf import csrf_exempt
 from collections import deque
 import math
 import json
@@ -601,14 +602,12 @@ class ConveyorAnalysisAPI(APIView):
                     center_x = x + w // 2
                     center_y = y + h // 2
                     
-                    # Filter: Only include objects that are within the belt area
-                    # Check if object center is within belt boundaries with some margin
-                    margin = 20  # pixels margin for objects partially on belt
-                    if not (belt_x1 - margin <= center_x <= belt_x2 + margin and 
-                            belt_y1 - margin <= center_y <= belt_y2 + margin):
+                    # Strict filtering: Only include objects that are clearly on the belt
+                    # Check if object center is within belt boundaries (no margin for stricter filtering)
+                    if not (belt_x1 <= center_x <= belt_x2 and belt_y1 <= center_y <= belt_y2):
                         continue  # Skip objects outside belt area
                     
-                    # Additional check: at least 50% of object should be within belt
+                    # Additional check: at least 70% of object must be within belt (stricter than before)
                     object_x1, object_y1 = x, y
                     object_x2, object_y2 = x + w, y + h
                     
@@ -623,9 +622,18 @@ class ConveyorAnalysisAPI(APIView):
                         object_area = w * h
                         overlap_ratio = overlap_area / object_area if object_area > 0 else 0
                         
-                        # Only include if at least 50% of object is on belt
-                        if overlap_ratio < 0.5:
+                        # Stricter requirement: at least 70% of object must be on belt
+                        if overlap_ratio < 0.7:
                             continue
+                    else:
+                        # No overlap at all, skip
+                        continue
+                    
+                    # Additional check: object should be primarily in the belt's Y range
+                    # This helps filter out objects above or below the belt
+                    object_center_y_ratio = (center_y - belt_y1) / (belt_y2 - belt_y1) if (belt_y2 - belt_y1) > 0 else 0
+                    if object_center_y_ratio < 0.1 or object_center_y_ratio > 0.9:
+                        continue  # Object is too close to belt edges (likely outside)
 
                     # Calculate confidence based on contour solidity
                     hull = cv2.convexHull(contour)
@@ -638,11 +646,11 @@ class ConveyorAnalysisAPI(APIView):
                     
                     object_data = {
                         "id": len(objects) + 1,
-                        "bbox": [float(x), float(y), float(x + w), float(y + h)],
+                        "bbox": [float(x), float(y), float(x + w), float(y + h + 60)],
                         "center": [float(center_x), float(center_y)],
                         "size": float(area),
                         "confidence": float(confidence),
-                        "label": "Iron Ore",
+                        "label": "Rock",  # Changed to "Rock" for clarity
                         "color": "#00FF00",  # Bright green color
                         "contour": contour_points  # Add contour points for drawing actual shape
                     }
@@ -665,33 +673,73 @@ class ConveyorAnalysisAPI(APIView):
         try:
             height, width = frame.shape[:2]
             
-            # Convert to grayscale
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            # Method 1: Try to detect belt using color-based segmentation
+            # Convert to HSV for better color detection
+            hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
             
-            # Apply threshold to detect belt (belt is usually darker/lighter than background)
-            _, thresh = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY)
+            # Detect belt-like colors (typically gray/dark colors)
+            # Create mask for belt color range (adjust based on your belt color)
+            lower_belt = np.array([0, 0, 30])  # Dark gray/black
+            upper_belt = np.array([180, 50, 200])  # Light gray
             
-            # Find contours of belt edges
-            contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            mask = cv2.inRange(hsv, lower_belt, upper_belt)
+            
+            # Apply morphological operations to clean up the mask
+            kernel = np.ones((5, 5), np.uint8)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+            
+            # Find contours
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             
             if len(contours) > 0:
-                # Find the largest contour (likely the belt)
-                largest_contour = max(contours, key=cv2.contourArea)
-                x, y, w, h = cv2.boundingRect(largest_contour)
+                # Find the largest horizontal contour (likely the belt)
+                # Filter contours by aspect ratio (belt should be wide)
+                valid_contours = []
+                for contour in contours:
+                    x, y, w, h = cv2.boundingRect(contour)
+                    aspect_ratio = w / h if h > 0 else 0
+                    area = cv2.contourArea(contour)
+                    # Belt should be wide (aspect ratio > 2) and reasonably large
+                    if aspect_ratio > 2 and area > (width * height * 0.1):
+                        valid_contours.append((contour, area, x, y, w, h))
                 
-                # Return belt boundaries (x1, y1, x2, y2)
-                return (x, y, x + w, y + h)
-            else:
-                # Default: assume belt is in center 80% of frame height, full width
-                belt_margin_y = int(height * 0.1)  # 10% margin from top and bottom
-                return (0, belt_margin_y, width, height - belt_margin_y)
+                if valid_contours:
+                    # Get the largest valid contour
+                    largest = max(valid_contours, key=lambda x: x[1])
+                    x, y, w, h = largest[2:]
+                    
+                    # Tighten the belt area - reduce margins to be more precise
+                    margin_reduction = 0.05  # 5% margin reduction
+                    x1 = max(0, int(x + w * margin_reduction))
+                    y1 = max(0, int(y + h * margin_reduction))
+                    x2 = min(width, int(x + w * (1 - margin_reduction)))
+                    y2 = min(height, int(y + h * (1 - margin_reduction)))
+                    
+                    return (x1, y1, x2, y2)
+            
+            # Method 2: Fallback - use horizontal region detection
+            # Belt is typically in the middle horizontal region
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            
+            # Calculate horizontal projection to find belt region
+            horizontal_projection = np.sum(gray, axis=1)
+            max_projection_idx = np.argmax(horizontal_projection)
+            
+            # Belt is typically in the middle 60% of the frame height
+            belt_start_y = int(height * 0.2)
+            belt_end_y = int(height * 0.8)
+            
+            # Use full width but restrict to middle region
+            return (0, belt_start_y, width, belt_end_y)
                 
         except Exception as e:
             logger.error(f"Belt area detection error: {str(e)}")
-            # Fallback: return frame boundaries with margins
+            # Fallback: return frame boundaries with tighter margins
             height, width = frame.shape[:2]
-            belt_margin_y = int(height * 0.1)
-            return (0, belt_margin_y, width, height - belt_margin_y)
+            belt_margin_y_top = int(height * 0.2)  # 20% margin from top
+            belt_margin_y_bottom = int(height * 0.2)  # 20% margin from bottom
+            return (0, belt_margin_y_top, width, height - belt_margin_y_bottom)
 
     def analyze_belt_alignment(self, frame):
         """Analyze belt alignment and center deviation"""

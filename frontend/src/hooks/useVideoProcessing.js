@@ -227,33 +227,42 @@ export const useVideoProcessing = ({
                       processedCtx.fillRect(x1, y1, width, height);
                     }
                     
-                    // Draw Iron Ore label with confidence
+                    // Draw Iron Ore label with confidence - Larger and more readable
                     if (obj.confidence !== undefined) {
-                      const label = `Iron Ore ${obj.id || index + 1} (${Math.round(obj.confidence * 100)}%)`;
-                      const labelWidth = processedCtx.measureText(label).width + 12;
+                      const label = `Rock ${obj.id || index + 1} (${Math.round(obj.confidence * 100)}%)`;
+                      
+                      // Use larger font for better readability
+                      processedCtx.font = 'bold 18px Arial';
+                      const labelMetrics = processedCtx.measureText(label);
+                      const labelWidth = labelMetrics.width + 20; // More padding
+                      const labelHeight = 26; // Taller label
                       const labelX = Math.max(0, Math.min(x1, processedCanvas.width - labelWidth));
-                      const labelY = Math.max(20, y1);
+                      const labelY = Math.max(labelHeight + 5, y1 - 5); // Position above object
                       
-                      // Background for label
-                      processedCtx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-                      processedCtx.fillRect(labelX, labelY - 18, labelWidth, 18);
+                      // Larger background for label with rounded corners effect
+                      processedCtx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+                      processedCtx.fillRect(labelX, labelY - labelHeight, labelWidth, labelHeight);
                       
-                      // Label text in bright green
+                      // Border for better visibility
+                      processedCtx.strokeStyle = '#00FF00';
+                      processedCtx.lineWidth = 2;
+                      processedCtx.strokeRect(labelX, labelY - labelHeight, labelWidth, labelHeight);
+                      
+                      // Label text in bright green - larger font
                       processedCtx.fillStyle = '#00FF00';
-                      processedCtx.font = 'bold 13px Arial';
-                      processedCtx.fillText(label, labelX + 6, labelY - 4);
+                      processedCtx.fillText(label, labelX + 10, labelY - 6);
                     }
                   }
                 });
               }
               
-              // Draw Iron Ore count overlay
+              // Draw Rock count overlay
               if (objectCount > 0) {
                 processedCtx.fillStyle = 'rgba(0, 0, 0, 0.7)';
                 processedCtx.fillRect(10, 10, 180, 35);
                 processedCtx.fillStyle = '#00FF00';
                 processedCtx.font = 'bold 16px Arial';
-                processedCtx.fillText(`${objectCount} Iron Ore detected`, 15, 32);
+                processedCtx.fillText(`${objectCount} Rock${objectCount > 1 ? 's' : ''} detected`, 15, 32);
               }
 
               const processedDataUrl = processedCanvas.toDataURL('image/jpeg', 0.9); // High quality to see boxes clearly

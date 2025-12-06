@@ -19,7 +19,7 @@ export default function BeltSimulator() {
       }
     }}>
       <Box sx={{ position: 'relative', zIndex: 1 }}>
-        <ConveyorSimulator />
+      <ConveyorSimulator />
       </Box>
     </Box>
   );

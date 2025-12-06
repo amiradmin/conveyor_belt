@@ -2,14 +2,16 @@ import React from 'react';
 import styles from './VideoProcessingSection.module.css';
 
 const CameraControls = ({
-  setShowVideoModal,
-  takeSimpleSnapshot,
-  takeSnapshot,
-  availableVideos,
-  selectedVideoPath,
-  setSelectedVideoPath,
-  processVideoFile,
-  isProcessing = false
+  setShowVideoModal = () => {},
+  takeSnapshot = () => {},
+  availableVideos = [],
+  selectedVideoPath = '',
+  setSelectedVideoPath = () => {},
+  processVideoFile = () => {},
+  isProcessing = false,
+  processingProgress = 0,
+  showProcessedFeed = false,
+  toggleVideoProcessing = () => {}
 }) => {
   return (
     <div className={styles.cameraControls}>
@@ -22,12 +24,12 @@ const CameraControls = ({
           Expand View
         </button>
         <button
-          className={`${styles.actionBtn} ${styles.simpleSnapshotBtn}`}
-          onClick={takeSimpleSnapshot}
-          title="Take a snapshot without video capture"
+          className={`${styles.actionBtn} ${styles.snapshotBtn}`}
+          onClick={takeSnapshot}
+          title="Take snapshot from video"
         >
-          <span>🖼️</span>
-          Simple Snapshot
+          <span>📸</span>
+          Take Snapshot
         </button>
       </div>
 
@@ -51,24 +53,24 @@ const CameraControls = ({
       </div>
 
       <button
-        className={`${styles.actionBtn} ${styles.snapshotBtn}`}
-        onClick={takeSnapshot}
-        title="Take snapshot from video (requires CORS)"
-        disabled={isProcessing}
-      >
-        <span>📸</span>
-        Video Snapshot
-      </button>
-
-      <button
         className={`${styles.actionBtn} ${styles.processBtn}`}
-        onClick={processVideoFile}
+        onClick={async () => {
+          // Process the video file
+          await processVideoFile();
+          // Automatically start AI processing to show frames immediately
+          if (!showProcessedFeed && toggleVideoProcessing) {
+            // Small delay to ensure video processing has started
+            setTimeout(() => {
+              toggleVideoProcessing();
+            }, 500);
+          }
+        }}
         disabled={!selectedVideoPath || isProcessing}
       >
         {isProcessing ? (
           <>
-            <span className={styles.processingSpinner}></span>
-            Processing...
+            <div className={styles.processingSpinner}></div>
+            Processing... {Math.round(processingProgress)}%
           </>
         ) : (
           <>

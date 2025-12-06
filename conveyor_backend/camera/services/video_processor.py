@@ -5,6 +5,10 @@ import time
 import json
 from datetime import datetime
 import logging
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -45,27 +49,21 @@ class VideoProcessor:
             'message': f'Processing started for {video_path}'
         }
 
+
     def _process_video(self, job_id, video_path, camera_id, callback):
-        """Background video processing"""
+        """Background video processing with live WebSocket updates"""
         try:
             logger.info(f"Starting video processing for job {job_id}")
 
-            # Open video
             cap = cv2.VideoCapture(video_path)
             if not cap.isOpened():
-                self.jobs[job_id]['status'] = 'error'
-                self.jobs[job_id]['error'] = 'Could not open video file'
-                if callback:
-                    callback({'error': 'Could not open video file'})
+                self._send_error(job_id, "Could not open video file", callback)
                 return
 
-            # Get video properties
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             fps = cap.get(cv2.CAP_PROP_FPS)
             width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-            logger.info(f"Video info: {total_frames} frames, {fps} fps, {width}x{height}")
 
             analysis_results = {
                 'job_id': job_id,
@@ -83,6 +81,7 @@ class VideoProcessor:
 
             frame_count = 0
             processed_frames = 0
+            channel_layer = get_channel_layer()
 
             while True:
                 ret, frame = cap.read()
@@ -91,17 +90,16 @@ class VideoProcessor:
 
                 frame_count += 1
 
-                # Process every 10th frame for speed
                 if frame_count % 10 == 0:
                     processed_frames += 1
 
-                    # Simple object detection (replace with your actual processing)
+                    # Simple object detection
                     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                     blur = cv2.GaussianBlur(gray, (5, 5), 0)
                     edges = cv2.Canny(blur, 50, 150)
                     contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
                     object_count = len([cnt for cnt in contours if cv2.contourArea(cnt) > 100])
+
                     analysis_results['object_counts'].append({
                         'frame': frame_count,
                         'count': object_count
@@ -112,12 +110,26 @@ class VideoProcessor:
                     self.jobs[job_id]['progress'] = progress
                     self.jobs[job_id]['frames_processed'] = processed_frames
 
-                    # Simulate processing delay
-                    time.sleep(0.01)
+                    # Send WebSocket update
+                    try:
+                        async_to_sync(channel_layer.group_send)(
+                            "frame_progress",  # must match your consumer group
+                            {
+                                "type": "progress_message",  # matches FrameProgressConsumer method
+                                "frame": frame_count,
+                                "object_count": object_count,
+                                "progress": progress,
+                                "is_final": False
+                            }
+                        )
+                    except Exception as e:
+                        logger.error(f"WebSocket update error: {str(e)}")
+
+                    time.sleep(0.01)  # simulate processing time
 
             cap.release()
 
-            # Calculate summary statistics
+            # Summary statistics
             if analysis_results['object_counts']:
                 counts = [item['count'] for item in analysis_results['object_counts']]
                 analysis_results['average_objects'] = sum(counts) / len(counts)
@@ -128,24 +140,54 @@ class VideoProcessor:
             analysis_results['end_time'] = datetime.now().isoformat()
             analysis_results['status'] = 'completed'
 
-            # Save results
-            self.jobs[job_id]['status'] = 'completed'
-            self.jobs[job_id]['progress'] = 100
-            self.jobs[job_id]['results'] = analysis_results
-            self.jobs[job_id]['end_time'] = analysis_results['end_time']
+            self.jobs[job_id].update({
+                'status': 'completed',
+                'progress': 100,
+                'results': analysis_results,
+                'end_time': analysis_results['end_time']
+            })
 
-            logger.info(f"Video processing completed for job {job_id}")
+            # Final WebSocket message
+            try:
+                async_to_sync(channel_layer.group_send)(
+                    "frame_progress",
+                    {
+                        "type": "progress_message",
+                        "frame": frame_count,
+                        "object_count": counts[-1] if counts else 0,
+                        "progress": 100,
+                        "is_final": True
+                    }
+                )
+            except Exception as e:
+                logger.error(f"Final WebSocket update error: {str(e)}")
 
-            # Call callback if provided
             if callback:
                 callback(analysis_results)
 
         except Exception as e:
-            logger.error(f"Error processing video {video_path}: {str(e)}")
-            self.jobs[job_id]['status'] = 'error'
-            self.jobs[job_id]['error'] = str(e)
-            if callback:
-                callback({'error': str(e)})
+            self._send_error(job_id, str(e), callback)
+
+    def _send_error(self, job_id, error_msg, callback=None):
+        self.jobs[job_id]['status'] = 'error'
+        self.jobs[job_id]['error'] = error_msg
+        logger.error(f"Video processing error ({job_id}): {error_msg}")
+
+        # Send WebSocket error
+        try:
+            channel_layer = get_channel_layer()
+            async_to_sync(channel_layer.group_send)(
+                "frame_progress",
+                {
+                    "type": "error_message",
+                    "error": error_msg
+                }
+            )
+        except Exception as e:
+            logger.error(f"WebSocket error sending failed: {str(e)}")
+
+        if callback:
+            callback({'error': error_msg})
 
     def get_status(self):
         """Get overall processing status"""

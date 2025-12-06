@@ -175,6 +175,8 @@ console.log(backendStyle.style.belt_width);
     roller_count: backendStyle.roller_count || defaultStyle.roller_count,
     roller_color: backendStyle.roller_color || defaultStyle.roller_color,
     object_color: backendStyle.object_color || defaultStyle.object_color,
+    object_width: backendStyle.style?.object_width || backendStyle.object_width || defaultStyle.object_width,
+    object_height: backendStyle.style?.object_height || backendStyle.object_height || defaultStyle.object_height,
     sensor_color: backendStyle.sensor_color || defaultStyle.sensor_color,
     sensor_2_color: backendStyle.sensor_2_color || defaultStyle.sensor_2_color,
     motor_color: backendStyle.motor_color || defaultStyle.motor_color,
@@ -202,6 +204,8 @@ export const defaultStyle = {
   roller_count: 8,
   roller_color: "#444",
   object_color: "#8b4513",
+  object_width: 30, // Configurable object width (default: 30px)
+  object_height: 18, // Configurable object height (default: 18px)
   sensor_color: "yellow",
   sensor_2_color: "orange",
   motor_color: "#222",

@@ -99,7 +99,8 @@
   filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.3));
   background: linear-gradient(180deg, #0a0a0a 0%, #1a1a1a 50%, #0a0a0a 100%);
   border-radius: 8px;
-  padding: 20px;
+  padding: 30px; /* Increased padding from 20px to 30px */
+  min-width: 100%; /* Ensure it takes full width */
 }
 
 .conveyor-visualization-container svg text {

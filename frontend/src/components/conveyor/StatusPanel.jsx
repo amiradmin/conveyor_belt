@@ -1,108 +1,134 @@
-// src/components/conveyor/StatusPanel.jsx
 import React from 'react';
-import './StatusPanel.css';
+import styles from './VideoProcessingSection.module.css';
 
-export default function StatusPanel({ plc, currentSpeed, apiBase, beltId, style }) {
-  // Helper function to get values from either structure
-  const getMotorStatus = () => {
-    if (!plc || !plc.outputs) return 'OFF';
+const StatusPanel = (props) => {
+  // Check if props is undefined or null
+  if (!props) {
+    console.warn('StatusPanel: props is undefined or null');
+    return <div className={styles.statusPanel}>Loading status panel...</div>;
+  }
 
-    const motorOn = plc.outputs.motor_on ||
-                   (plc.outputs.digital_outputs && plc.outputs.digital_outputs.motor_on && plc.outputs.digital_outputs.motor_on.state);
+  try {
+    // Destructure with safe defaults
+    const {
+      isProcessing = false,
+      streamingMode = 'frames',
+      processingProgress = 0,
+      frameCount = 0,
+      processedFrames,
+      currentFPS = 0,
+      processingFPS = 2,
+      lastProcessedTime = null,
+      processedVideoUrl = null,
+      switchToFrameMode = () => {},
+      switchToVideoMode = () => {},
+      toggleVideoProcessing = () => {},
+      showProcessedFeed = false
+    } = props;
 
-    return motorOn ? 'ON' : 'OFF';
-  };
+    const formatTimeSinceLastFrame = () => {
+      if (!lastProcessedTime) return '--';
+      try {
+        const seconds = Math.floor((Date.now() - lastProcessedTime) / 1000);
+        if (seconds < 1) return 'Just now';
+        if (seconds < 60) return `${seconds}s ago`;
+        const minutes = Math.floor(seconds / 60);
+        return `${minutes}m ago`;
+      } catch (e) {
+        return '--';
+      }
+    };
 
-  const getPartsCount = () => {
-    if (!plc || !plc.counters) return 0;
+    // Safely get processed frames length
+    const bufferCount = (() => {
+      try {
+        return Array.isArray(processedFrames) ? processedFrames.length : 0;
+      } catch (e) {
+        console.error('Error getting processedFrames length:', e);
+        return 0;
+      }
+    })();
 
-    return plc.counters.object_counter ||
-           (plc.counters.object_counter && typeof plc.counters.object_counter === 'object' ? plc.counters.object_counter.current : 0);
-  };
-
-  const getAlarmStatus = () => {
-    if (!plc || !plc.outputs) return 'OK';
-
-    const alarm = plc.outputs.alarm ||
-                  (plc.outputs.digital_outputs && plc.outputs.digital_outputs.alarm && plc.outputs.digital_outputs.alarm.state);
-
-    return alarm ? 'ACTIVE' : 'OK';
-  };
-
-  const motorStatus = getMotorStatus();
-  const partsCount = getPartsCount();
-  const alarmStatus = getAlarmStatus();
-
-  return (
-    <div className="status-panel">
-      <div className="status-panel-header">
-        <div className="status-panel-title">
-          <div className="status-panel-icon">📊</div>
-          <h4>وضعیت سیستم</h4>
+    return (
+      <div className={styles.statusPanel}>
+        <div className={styles.statusHeader}>
+          <h4>Processing Status</h4>
+          <div className={styles.statusBadge}>
+            {isProcessing ? 'PROCESSING' : streamingMode === 'video' ? 'VIDEO READY' : 'STREAMING'}
+          </div>
         </div>
-      </div>
-      
-      <div className="status-metrics-grid">
-        <div className={`status-metric-card ${motorStatus === 'ON' ? 'active' : ''}`}>
-          <div className="metric-icon motor-icon">⚙️</div>
-          <div className="metric-content">
-            <div className="metric-label">وضعیت موتور</div>
-            <div className={`metric-value ${motorStatus === 'ON' ? 'status-on' : 'status-off'}`}>
-              {motorStatus === 'ON' ? 'فعال' : 'غیرفعال'}
+
+        <div className={styles.statusGrid}>
+          <div className={styles.statusItem}>
+            <div className={styles.statusLabel}>Mode</div>
+            <div className={styles.statusValue}>{streamingMode}</div>
+          </div>
+          <div className={styles.statusItem}>
+            <div className={styles.statusLabel}>Progress</div>
+            <div className={styles.statusValue}>
+              {isProcessing ? `${Math.round(processingProgress)}%` : '100%'}
             </div>
           </div>
-          <div className={`status-indicator ${motorStatus === 'ON' ? 'indicator-on' : 'indicator-off'}`}></div>
-        </div>
-
-        <div className="status-metric-card">
-          <div className="metric-icon parts-icon">📦</div>
-          <div className="metric-content">
-            <div className="metric-label">تعداد قطعات</div>
-            <div className="metric-value parts-value">{partsCount.toLocaleString('fa-IR')}</div>
+          <div className={styles.statusItem}>
+            <div className={styles.statusLabel}>Frames</div>
+            <div className={styles.statusValue}>{frameCount}</div>
+          </div>
+          <div className={styles.statusItem}>
+            <div className={styles.statusLabel}>Buffer</div>
+            <div className={styles.statusValue}>{bufferCount}</div>
+          </div>
+          <div className={styles.statusItem}>
+            <div className={styles.statusLabel}>FPS</div>
+            <div className={styles.statusValue}>{currentFPS || processingFPS}</div>
+          </div>
+          <div className={styles.statusItem}>
+            <div className={styles.statusLabel}>Last Frame</div>
+            <div className={styles.statusValue}>{formatTimeSinceLastFrame()}</div>
           </div>
         </div>
 
-        <div className={`status-metric-card ${alarmStatus === 'ACTIVE' ? 'alarm-active' : ''}`}>
-          <div className="metric-icon alarm-icon">🚨</div>
-          <div className="metric-content">
-            <div className="metric-label">وضعیت هشدار</div>
-            <div className={`metric-value ${alarmStatus === 'ACTIVE' ? 'alarm-value' : 'ok-value'}`}>
-              {alarmStatus === 'ACTIVE' ? 'فعال' : 'عادی'}
+        <div className={styles.statusActions}>
+          {isProcessing && (
+            <div className={styles.progressBar}>
+              <div
+                className={styles.progressFill}
+                style={{ width: `${Math.min(100, Math.max(0, processingProgress))}%` }}
+              ></div>
             </div>
-          </div>
-          {alarmStatus === 'ACTIVE' && <div className="alarm-pulse"></div>}
-        </div>
-
-        <div className="status-metric-card">
-          <div className="metric-icon speed-icon">⚡</div>
-          <div className="metric-content">
-            <div className="metric-label">سرعت</div>
-            <div className="metric-value speed-value">{currentSpeed}x</div>
-          </div>
-        </div>
-      </div>
-
-      {/* System Info */}
-      <div className="system-info">
-        <div className="system-info-header">
-          <span className="info-icon">🔗</span>
-          <span className="info-title">اطلاعات اتصال</span>
-        </div>
-        <div className="system-info-grid">
-          <div className="info-item">
-            <span className="info-label">API:</span>
-            <span className="info-value">{apiBase}</span>
-          </div>
-          <div className="info-item">
-            <span className="info-label">شناسه نوار:</span>
-            <span className="info-value">{beltId}</span>
-          </div>
-          <div className="info-item">
-            <span className="info-label">عرض نوار:</span>
-            <span className="info-value">{style?.belt_width || style?.style?.belt_width || '--'}px</span>
+          )}
+          <div className={styles.actionButtons}>
+            {processedVideoUrl && (
+              <button
+                className={styles.modeSwitchBtn}
+                onClick={streamingMode === 'video' ? switchToFrameMode : switchToVideoMode}
+              >
+                {streamingMode === 'video' ? 'Switch to Frames' : 'Switch to Video'}
+              </button>
+            )}
+            <button
+              className={styles.restartBtn}
+              onClick={toggleVideoProcessing}
+            >
+              {showProcessedFeed ? 'Stop AI' : 'Start AI'}
+            </button>
           </div>
         </div>
       </div>
-    </div>
-  );
-}
+    );
+  } catch (error) {
+    console.error('Error rendering StatusPanel:', error);
+    return (
+      <div className={styles.statusPanel}>
+        <div className={styles.statusHeader}>
+          <h4>Processing Status</h4>
+          <div className={styles.statusBadge}>ERROR</div>
+        </div>
+        <div className={styles.errorMessage}>
+          Error loading status panel. Please refresh the page.
+        </div>
+      </div>
+    );
+  }
+};
+
+export default StatusPanel;

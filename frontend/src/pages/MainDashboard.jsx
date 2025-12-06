@@ -76,13 +76,13 @@ function MainDashboard() {
     <Box className="main-dashboard">
       {/* Header */}
       <Box className="dashboard-header">
-        <Box>
+    <Box>
           <Typography variant="h4" className="dashboard-title">
-            کنترل روم عملیات - فولاد شادگان
-          </Typography>
+          کنترل روم عملیات - فولاد شادگان
+        </Typography>
           <Typography variant="body1" className="dashboard-subtitle">
-            سیستم نظارت لحظه‌ای بر ۶ نوار نقاله اصلی
-          </Typography>
+          سیستم نظارت لحظه‌ای بر ۶ نوار نقاله اصلی
+        </Typography>
         </Box>
       </Box>
 
