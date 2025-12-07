@@ -1,14 +1,15 @@
 # vision/urls.py
 from django.urls import path
 from .views import (
-    AvailableVideos, StartProcessing, JobStatus, 
-    GetReplayFrames, GetJobStats
+    AvailableVideos, StartProcessing, JobStatus,
+    StopProcessing, ListJobs, GetMetrics
 )
 
 urlpatterns = [
     path("videos/", AvailableVideos.as_view(), name="available-videos"),
     path("start/", StartProcessing.as_view(), name="start-processing"),
+    path("stop/", StopProcessing.as_view(), name="stop-processing"),
     path("status/<str:job_id>/", JobStatus.as_view(), name="job-status"),
-    path("replay/", GetReplayFrames.as_view(), name="get-replay-frames"),
-    path("stats/<str:job_id>/", GetJobStats.as_view(), name="job-stats"),
+    path("jobs/", ListJobs.as_view(), name="list-jobs"),
+    path("metrics/<str:job_id>/", GetMetrics.as_view(), name="get-metrics"),
 ]

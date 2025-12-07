@@ -10,9 +10,6 @@ logger = logging.getLogger(__name__)
 class FrameProgressConsumer(AsyncJsonWebsocketConsumer):
     async def connect(self):
         self.group_name = "frame_progress"
-        self.replay_mode = False
-        self.replay_speed = 1.0  # 1x normal speed
-        self.replay_position = 0
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
         logger.info(f"WebSocket connected: {self.channel_name}")
@@ -26,52 +23,26 @@ class FrameProgressConsumer(AsyncJsonWebsocketConsumer):
         command = content.get('command')
 
         if command == 'start_replay':
-            self.replay_mode = True
-            self.replay_position = content.get('position', 0)
-            self.replay_speed = content.get('speed', 1.0)
+            # Handle replay start
             await self.send_json({
                 'type': 'replay_status',
-                'status': 'started',
-                'position': self.replay_position,
-                'speed': self.replay_speed
+                'status': 'started'
             })
-
-        elif command == 'stop_replay':
-            self.replay_mode = False
+        elif command == 'get_metrics_summary':
+            # Return metrics summary
             await self.send_json({
-                'type': 'replay_status',
-                'status': 'stopped'
-            })
-
-        elif command == 'seek_replay':
-            self.replay_position = content.get('position', 0)
-            await self.send_json({
-                'type': 'replay_seek',
-                'position': self.replay_position
-            })
-
-        elif command == 'set_replay_speed':
-            self.replay_speed = content.get('speed', 1.0)
-            await self.send_json({
-                'type': 'replay_speed',
-                'speed': self.replay_speed
+                'type': 'metrics_summary',
+                'data': content.get('data', {})
             })
 
     async def progress_message(self, event):
-        """Send processing progress or replay frames"""
-        if self.replay_mode:
-            # In replay mode, we don't send live frames
-            return
-
+        """Send processing progress with belt metrics"""
         await self.send_json({
             "type": "progress",
             "frame": event.get("frame"),
-            "object_count": event.get("object_count"),
             "progress": event.get("progress"),
-            "speed": event.get("speed", 0),
-            "alignment": event.get("alignment"),
+            "belt_metrics": event.get("belt_metrics", {}),
             "frame_image": event.get("frame_image"),
-            "replay_buffer_size": event.get("replay_buffer_size", 0),
             "is_final": event.get("is_final", False),
             "replay_available": event.get("replay_available", False)
         })
