@@ -33,13 +33,13 @@ export default function ConveyorBeltMonitoring() {
   const [frameNumber, setFrameNumber] = useState(0);
   const [progress, setProgress] = useState(0);
 
-  // Replay states
-  const [isReplaying, setIsReplaying] = useState(false);
-  const [replaySpeed, setReplaySpeed] = useState(1.0);
+  // Fullscreen state
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // WebSocket and canvas refs
   const wsRef = useRef(null);
   const canvasRef = useRef(null);
+  const videoContainerRef = useRef(null);
 
   // Color constants
   const COLORS = {
@@ -58,10 +58,59 @@ export default function ConveyorBeltMonitoring() {
     fetchVideos();
     connectWebSocket();
 
+    // Add event listener for fullscreen change
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
     return () => {
       disconnectWebSocket();
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
     };
   }, []);
+
+  const handleFullscreenChange = () => {
+    setIsFullscreen(
+      document.fullscreenElement ||
+      document.webkitFullscreenElement ||
+      document.mozFullScreenElement ||
+      document.msFullscreenElement
+    );
+  };
+
+  const toggleFullscreen = () => {
+    const container = videoContainerRef.current;
+
+    if (!container) return;
+
+    if (!isFullscreen) {
+      // Enter fullscreen
+      if (container.requestFullscreen) {
+        container.requestFullscreen();
+      } else if (container.webkitRequestFullscreen) {
+        container.webkitRequestFullscreen();
+      } else if (container.mozRequestFullScreen) {
+        container.mozRequestFullScreen();
+      } else if (container.msRequestFullscreen) {
+        container.msRequestFullscreen();
+      }
+    } else {
+      // Exit fullscreen
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      } else if (document.webkitExitFullscreen) {
+        document.webkitExitFullscreen();
+      } else if (document.mozCancelFullScreen) {
+        document.mozCancelFullScreen();
+      } else if (document.msExitFullscreen) {
+        document.msExitFullscreen();
+      }
+    }
+  };
 
   const fetchVideos = async () => {
     try {
@@ -392,6 +441,30 @@ export default function ConveyorBeltMonitoring() {
     ];
   };
 
+  // Fullscreen styles
+  const fullscreenStyles = isFullscreen ? {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: '100vw',
+    height: '100vh',
+    zIndex: 9999,
+    backgroundColor: '#000',
+    padding: '20px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center'
+  } : {};
+
+  const videoContainerStyles = {
+    backgroundColor: 'white',
+    padding: '20px',
+    borderRadius: '10px',
+    boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+    ...fullscreenStyles
+  };
+
   return (
     <div style={{
       padding: '20px',
@@ -496,13 +569,52 @@ export default function ConveyorBeltMonitoring() {
           </div>
 
           {/* Live Video Feed */}
-          <div style={{
-            backgroundColor: 'white',
-            padding: '20px',
-            borderRadius: '10px',
-            boxShadow: '0 2px 10px rgba(0,0,0,0.1)'
-          }}>
-            <h2 style={{ marginBottom: '15px', color: '#333' }}>Live Monitoring</h2>
+          <div
+            ref={videoContainerRef}
+            style={videoContainerStyles}
+          >
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '15px'
+            }}>
+              <h2 style={{ color: '#333', margin: 0 }}>
+                {isFullscreen ? '🔍 FULL SCREEN - Live Monitoring' : 'Live Monitoring'}
+              </h2>
+
+              {/* Fullscreen Toggle Button */}
+              <button
+                onClick={toggleFullscreen}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: isFullscreen ? COLORS.danger : COLORS.info,
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '5px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: '14px'
+                }}
+                title={isFullscreen ? 'Exit Fullscreen (Press ESC)' : 'Enter Fullscreen'}
+              >
+                {isFullscreen ? (
+                  <>
+                    <span>✕</span>
+                    Exit Fullscreen
+                  </>
+                ) : (
+                  <>
+                    <span>⛶</span>
+                    Fullscreen
+                  </>
+                )}
+              </button>
+            </div>
+
             <div style={{
               backgroundColor: '#000',
               borderRadius: '5px',
@@ -510,16 +622,53 @@ export default function ConveyorBeltMonitoring() {
               minHeight: '400px',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center'
+              justifyContent: 'center',
+              position: 'relative'
             }}>
               {currentFrame ? (
-                <canvas
-                  ref={canvasRef}
-                  style={{
-                    maxWidth: '100%',
-                    maxHeight: '400px'
-                  }}
-                />
+                <>
+                  <canvas
+                    ref={canvasRef}
+                    style={{
+                      maxWidth: '100%',
+                      maxHeight: isFullscreen ? '85vh' : '400px'
+                    }}
+                  />
+
+                  {/* Fullscreen overlay controls */}
+                  {isFullscreen && (
+                    <div style={{
+                      position: 'absolute',
+                      bottom: '20px',
+                      left: '50%',
+                      transform: 'translateX(-50%)',
+                      display: 'flex',
+                      gap: '10px',
+                      alignItems: 'center',
+                      backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                      padding: '10px 20px',
+                      borderRadius: '5px'
+                    }}>
+                      <div style={{ color: 'white', fontSize: '14px' }}>
+                        Frame: {frameNumber} | Progress: {progress}%
+                      </div>
+                      <button
+                        onClick={toggleFullscreen}
+                        style={{
+                          padding: '5px 10px',
+                          backgroundColor: COLORS.danger,
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '3px',
+                          cursor: 'pointer',
+                          fontSize: '12px'
+                        }}
+                      >
+                        Exit (ESC)
+                      </button>
+                    </div>
+                  )}
+                </>
               ) : (
                 <div style={{ color: '#666', textAlign: 'center', padding: '20px' }}>
                   {isProcessing
@@ -528,14 +677,40 @@ export default function ConveyorBeltMonitoring() {
                   <div style={{ fontSize: '14px', marginTop: '10px' }}>
                     Frame: {frameNumber} | Progress: {progress}%
                   </div>
+                  {isFullscreen && (
+                    <div style={{ marginTop: '20px', fontSize: '12px', color: '#999' }}>
+                      Press ESC or click Exit Fullscreen to return
+                    </div>
+                  )}
                 </div>
               )}
             </div>
+
+            {!isFullscreen && (
+              <div style={{
+                marginTop: '15px',
+                padding: '10px',
+                backgroundColor: '#f8f9fa',
+                borderRadius: '5px',
+                fontSize: '12px',
+                color: '#666',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <div>
+                  <span style={{ fontWeight: 'bold' }}>Tip:</span> Click Fullscreen button for better view
+                </div>
+                <div>
+                  <span style={{ fontFamily: 'monospace' }}>ESC</span> to exit fullscreen
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
         {/* Right Column - Metrics Dashboard */}
-        <div>
+        <div style={{ display: isFullscreen ? 'none' : 'block' }}>
           {/* Key Metrics Cards */}
           <div style={{
             display: 'grid',
@@ -816,6 +991,40 @@ export default function ConveyorBeltMonitoring() {
           </div>
         </div>
       </div>
+
+      {/* Fullscreen notification */}
+      {isFullscreen && (
+        <div style={{
+          position: 'fixed',
+          top: '10px',
+          right: '10px',
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          color: 'white',
+          padding: '10px 15px',
+          borderRadius: '5px',
+          fontSize: '14px',
+          zIndex: 10000,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px'
+        }}>
+          <span>⛶ Fullscreen Mode Active</span>
+          <button
+            onClick={toggleFullscreen}
+            style={{
+              padding: '5px 10px',
+              backgroundColor: COLORS.danger,
+              color: 'white',
+              border: 'none',
+              borderRadius: '3px',
+              cursor: 'pointer',
+              fontSize: '12px'
+            }}
+          >
+            Exit (ESC)
+          </button>
+        </div>
+      )}
     </div>
   );
 }
