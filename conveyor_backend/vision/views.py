@@ -3,41 +3,49 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from django.conf import settings
-import os, glob, time, json
-from .services.belt_processor import BeltProcessor
-from .models import ProcessingJob
+import os
+import glob
+import time
+import json
 import logging
+from .services.belt_processor import processor
+from .models import ProcessingJob
 
 logger = logging.getLogger(__name__)
-
-# Create a single instance of BeltProcessor
-processor = BeltProcessor()
 
 
 class AvailableVideos(APIView):
     def get(self, request):
-        """Get list of available videos in media directory"""
+        """Get list of available videos"""
         try:
             media_dir = settings.MEDIA_ROOT
-            exts = ["*.mp4", "*.avi", "*.mov", "*.mkv", "*.MP4", "*.AVI"]
-            videos = []
+            video_extensions = ["*.mp4", "*.avi", "*.mov", "*.mkv", "*.MP4", "*.AVI", "*.MOV", "*.MKV"]
 
-            for ext in exts:
+            videos = []
+            for ext in video_extensions:
+                # Search in media directory and subdirectories
                 pattern = os.path.join(media_dir, "**", ext)
-                for path in glob.glob(pattern, recursive=True):
-                    rel_path = os.path.relpath(path, media_dir)
-                    videos.append({
-                        "path": rel_path,
-                        "full_path": path,
-                        "filename": os.path.basename(path),
-                        "size": os.path.getsize(path) if os.path.exists(path) else 0,
-                        "size_mb": f"{os.path.getsize(path) / (1024 * 1024):.2f} MB" if os.path.exists(path) else "0 MB"
-                    })
+                for video_path in glob.glob(pattern, recursive=True):
+                    if os.path.isfile(video_path):
+                        rel_path = os.path.relpath(video_path, media_dir)
+                        file_size = os.path.getsize(video_path)
+
+                        videos.append({
+                            "path": rel_path,
+                            "full_path": video_path,
+                            "filename": os.path.basename(video_path),
+                            "size_bytes": file_size,
+                            "size_mb": f"{file_size / (1024 * 1024):.2f} MB",
+                            "extension": os.path.splitext(video_path)[1].lower()
+                        })
+
+            # Sort by filename
+            videos.sort(key=lambda x: x['filename'])
 
             return Response({
                 "status": "success",
-                "available_videos": videos,
-                "count": len(videos)
+                "count": len(videos),
+                "available_videos": videos
             })
 
         except Exception as e:
@@ -61,39 +69,55 @@ class StartProcessing(APIView):
                     "error": "video_path is required"
                 }, status=status.HTTP_400_BAD_REQUEST)
 
-            # Find the actual file path
-            actual_path = None
-            candidates = [
-                os.path.join(settings.MEDIA_ROOT, video_path),
+            # Check if video exists
+            if not os.path.isabs(video_path):
+                # Try relative path from media directory
+                full_path = os.path.join(settings.MEDIA_ROOT, video_path)
+            else:
+                full_path = video_path
+
+            # Try multiple locations
+            possible_paths = [
+                full_path,
                 video_path,
-                os.path.join(settings.BASE_DIR, video_path)
+                os.path.join(settings.BASE_DIR, video_path),
+                os.path.join(settings.MEDIA_ROOT, os.path.basename(video_path))
             ]
 
-            for candidate in candidates:
-                if os.path.exists(candidate):
-                    actual_path = candidate
+            actual_path = None
+            for path in possible_paths:
+                if os.path.exists(path) and os.path.isfile(path):
+                    actual_path = path
                     break
 
             if not actual_path:
                 return Response({
                     "status": "error",
                     "error": f"Video file not found: {video_path}",
-                    "searched_paths": candidates
+                    "searched_paths": possible_paths
                 }, status=status.HTTP_404_NOT_FOUND)
 
             # Generate unique job ID
-            job_id = f"belt_job_{int(time.time())}_{camera_id}"
+            timestamp = int(time.time())
+            job_id = f"belt_{timestamp}_{camera_id}"
+
+            logger.info(f"Starting processing job {job_id} for video: {actual_path}")
 
             # Start the processing job
             job = processor.start_job(job_id, actual_path, camera_id)
 
             return Response({
                 "status": "success",
-                "message": "Processing started successfully",
+                "message": "Video processing started successfully",
                 "job_id": job_id,
                 "video_path": actual_path,
                 "camera_id": camera_id,
-                "start_time": time.strftime("%Y-%m-%d %H:%M:%S")
+                "start_time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "details": {
+                    "video_file": os.path.basename(actual_path),
+                    "job_status_url": f"/api/vision/status/{job_id}/",
+                    "websocket_url": "ws://localhost:8000/ws/vision/progress/"
+                }
             })
 
         except Exception as e:
@@ -108,36 +132,18 @@ class JobStatus(APIView):
     def get(self, request, job_id):
         """Get status of a processing job"""
         try:
-            # Try to get from database first
-            try:
-                job = ProcessingJob.objects.get(job_id=job_id)
-                response_data = {
-                    "job_id": job.job_id,
-                    "status": job.status,
-                    "progress": job.progress,
-                    "result": job.result,
-                    "created_at": job.created_at,
-                    "updated_at": job.updated_at,
-                    "video": job.video.path if job.video else None
-                }
+            status_data = processor.get_job_status(job_id)
 
-                # Add additional metrics from processor if available
-                processor_status = processor.get_job_status(job_id)
-                if 'error' not in processor_status:
-                    response_data.update(processor_status)
+            if 'error' in status_data:
+                return Response({
+                    "status": "error",
+                    **status_data
+                }, status=status.HTTP_404_NOT_FOUND)
 
-                return Response(response_data)
-
-            except ProcessingJob.DoesNotExist:
-                # Check if job exists in processor
-                processor_status = processor.get_job_status(job_id)
-                if 'error' not in processor_status:
-                    return Response(processor_status)
-                else:
-                    return Response({
-                        "status": "error",
-                        "error": "Job not found"
-                    }, status=status.HTTP_404_NOT_FOUND)
+            return Response({
+                "status": "success",
+                **status_data
+            })
 
         except Exception as e:
             logger.error(f"Error getting job status: {e}")
@@ -182,7 +188,7 @@ class StopProcessing(APIView):
 
 class ListJobs(APIView):
     def get(self, request):
-        """List all processing jobs"""
+        """List all processing jobs from database"""
         try:
             jobs = ProcessingJob.objects.all().order_by('-created_at')
 
@@ -192,9 +198,12 @@ class ListJobs(APIView):
                     "job_id": job.job_id,
                     "status": job.status,
                     "progress": job.progress,
-                    "video": job.video.path if job.video else None,
+                    "video": job.video.filename if job.video else "Unknown",
+                    "video_path": job.video.path if job.video else None,
+                    "camera_id": job.camera_id,
                     "created_at": job.created_at,
-                    "updated_at": job.updated_at
+                    "updated_at": job.updated_at,
+                    "result": job.result
                 })
 
             return Response({
@@ -211,55 +220,85 @@ class ListJobs(APIView):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-class GetMetrics(APIView):
-    def get(self, request, job_id):
-        """Get detailed metrics for a job"""
+class ActiveJobs(APIView):
+    def get(self, request):
+        """List currently active processing jobs"""
         try:
-            # Get job from database
-            job = ProcessingJob.objects.get(job_id=job_id)
+            active_jobs = processor.list_active_jobs()
 
-            # Get all detections for this job
-            detections = job.detections.all()
+            return Response({
+                "status": "success",
+                "active_jobs": active_jobs,
+                "count": len(active_jobs)
+            })
 
-            # Calculate metrics
-            metrics = {
-                "job_id": job_id,
-                "status": job.status,
-                "progress": job.progress,
-                "video": job.video.path if job.video else None,
-
-                "processing_stats": job.result or {},
-
-                "detection_stats": {
-                    "total_detections": detections.count(),
-                    "by_label": {},
-                    "frame_coverage": {}
-                },
-
-                "timestamps": {
-                    "created": job.created_at,
-                    "updated": job.updated_at,
-                    "duration": (
-                                job.updated_at - job.created_at).total_seconds() if job.updated_at and job.created_at else None
-                }
-            }
-
-            # Calculate label distribution
-            for detection in detections:
-                label = detection.label
-                if label not in metrics["detection_stats"]["by_label"]:
-                    metrics["detection_stats"]["by_label"][label] = 0
-                metrics["detection_stats"]["by_label"][label] += 1
-
-            return Response(metrics)
-
-        except ProcessingJob.DoesNotExist:
+        except Exception as e:
+            logger.error(f"Error listing active jobs: {e}")
             return Response({
                 "status": "error",
-                "error": "Job not found"
-            }, status=status.HTTP_404_NOT_FOUND)
+                "error": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class GetReplayFrames(APIView):
+    def post(self, request):
+        """Get replay frames from a completed job"""
+        try:
+            job_id = request.data.get("job_id")
+            start_frame = request.data.get("start_frame", 0)
+            end_frame = request.data.get("end_frame")
+
+            if not job_id:
+                return Response({
+                    "status": "error",
+                    "error": "job_id is required"
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            replay_data = processor.get_replay_frames(job_id, start_frame, end_frame)
+
+            return Response({
+                "status": "success",
+                "job_id": job_id,
+                **replay_data
+            })
+
         except Exception as e:
-            logger.error(f"Error getting metrics: {e}")
+            logger.error(f"Error getting replay frames: {e}")
+            return Response({
+                "status": "error",
+                "error": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class SystemInfo(APIView):
+    def get(self, request):
+        """Get system information and status"""
+        try:
+            # Get some basic system info
+            import psutil
+            import platform
+
+            system_info = {
+                "python_version": platform.python_version(),
+                "platform": platform.platform(),
+                "processor": platform.processor(),
+                "cpu_count": psutil.cpu_count(),
+                "cpu_percent": psutil.cpu_percent(),
+                "memory_total": psutil.virtual_memory().total,
+                "memory_available": psutil.virtual_memory().available,
+                "memory_percent": psutil.virtual_memory().percent,
+                "disk_usage": psutil.disk_usage('/').percent,
+                "media_directory": settings.MEDIA_ROOT,
+                "base_directory": settings.BASE_DIR,
+            }
+
+            return Response({
+                "status": "success",
+                "system_info": system_info
+            })
+
+        except Exception as e:
+            logger.error(f"Error getting system info: {e}")
             return Response({
                 "status": "error",
                 "error": str(e)

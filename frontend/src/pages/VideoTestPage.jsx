@@ -13,7 +13,7 @@ export default function ConveyorBeltMonitoring() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [jobId, setJobId] = useState(null);
 
-  // Live metrics - updated for belt detection
+  // Live metrics
   const [currentFrame, setCurrentFrame] = useState(null);
   const [beltMetrics, setBeltMetrics] = useState({
     speed: 0,
@@ -28,18 +28,23 @@ export default function ConveyorBeltMonitoring() {
     frame_number: 0
   });
 
-  // Historical data for charts
+  // Performance tracking
   const [metricsHistory, setMetricsHistory] = useState([]);
   const [frameNumber, setFrameNumber] = useState(0);
   const [progress, setProgress] = useState(0);
+  const [currentFPS, setCurrentFPS] = useState(0);
+  const [connectionStatus, setConnectionStatus] = useState("disconnected");
 
   // Fullscreen state
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // WebSocket and canvas refs
+  // Refs
   const wsRef = useRef(null);
   const canvasRef = useRef(null);
   const videoContainerRef = useRef(null);
+  const frameTimesRef = useRef([]);
+  const frameBufferRef = useRef([]);
+  const lastFrameTimeRef = useRef(0);
 
   // Color constants
   const COLORS = {
@@ -54,61 +59,42 @@ export default function ConveyorBeltMonitoring() {
     load: '#607D8B'
   };
 
+  // Initialize
   useEffect(() => {
     fetchVideos();
     connectWebSocket();
 
-    // Add event listener for fullscreen change
+    // Fullscreen event listeners
+    const handleFullscreenChange = () => {
+      setIsFullscreen(
+        document.fullscreenElement ||
+        document.webkitFullscreenElement ||
+        document.mozFullScreenElement ||
+        document.msFullscreenElement
+      );
+    };
+
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
-    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
-    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
 
+    // Cleanup
     return () => {
       disconnectWebSocket();
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
       document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
-      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
-      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
     };
   }, []);
 
-  const handleFullscreenChange = () => {
-    setIsFullscreen(
-      document.fullscreenElement ||
-      document.webkitFullscreenElement ||
-      document.mozFullScreenElement ||
-      document.msFullscreenElement
-    );
-  };
-
   const toggleFullscreen = () => {
     const container = videoContainerRef.current;
-
     if (!container) return;
 
     if (!isFullscreen) {
-      // Enter fullscreen
-      if (container.requestFullscreen) {
-        container.requestFullscreen();
-      } else if (container.webkitRequestFullscreen) {
-        container.webkitRequestFullscreen();
-      } else if (container.mozRequestFullScreen) {
-        container.mozRequestFullScreen();
-      } else if (container.msRequestFullscreen) {
-        container.msRequestFullscreen();
-      }
+      if (container.requestFullscreen) container.requestFullscreen();
+      else if (container.webkitRequestFullscreen) container.webkitRequestFullscreen();
     } else {
-      // Exit fullscreen
-      if (document.exitFullscreen) {
-        document.exitFullscreen();
-      } else if (document.webkitExitFullscreen) {
-        document.webkitExitFullscreen();
-      } else if (document.mozCancelFullScreen) {
-        document.mozCancelFullScreen();
-      } else if (document.msExitFullscreen) {
-        document.msExitFullscreen();
-      }
+      if (document.exitFullscreen) document.exitFullscreen();
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
     }
   };
 
@@ -130,17 +116,34 @@ export default function ConveyorBeltMonitoring() {
     disconnectWebSocket();
 
     wsRef.current = new WebSocket("ws://localhost:8000/ws/vision/progress/");
+    setConnectionStatus("connecting");
 
     wsRef.current.onopen = () => {
-      console.log("WebSocket connected for belt monitoring");
+      console.log("✅ WebSocket connected for belt monitoring");
+      setConnectionStatus("connected");
+
+      // Send ping to test connection
+      wsRef.current.send(JSON.stringify({
+        command: 'ping',
+        timestamp: Date.now()
+      }));
     };
 
     wsRef.current.onclose = () => {
-      console.log("WebSocket disconnected");
+      console.log("❌ WebSocket disconnected");
+      setConnectionStatus("disconnected");
+
+      // Try to reconnect after 3 seconds
+      setTimeout(() => {
+        if (!isProcessing) return;
+        console.log("🔄 Attempting to reconnect WebSocket...");
+        connectWebSocket();
+      }, 3000);
     };
 
     wsRef.current.onerror = (error) => {
       console.error("WebSocket error:", error);
+      setConnectionStatus("error");
     };
 
     wsRef.current.onmessage = (event) => {
@@ -154,6 +157,14 @@ export default function ConveyorBeltMonitoring() {
           case "error":
             console.error("Processing error:", data.error);
             setIsProcessing(false);
+            setConnectionStatus("error");
+            break;
+          case "pong":
+            // Connection test successful
+            console.log("✅ WebSocket connection verified");
+            break;
+          case "status":
+            console.log("WebSocket status:", data);
             break;
           default:
             console.log("Unknown message type:", data.type);
@@ -169,16 +180,35 @@ export default function ConveyorBeltMonitoring() {
       wsRef.current.close();
       wsRef.current = null;
     }
+    setConnectionStatus("disconnected");
   };
 
   const handleProgressData = (data) => {
+    // Update FPS calculation
+    const now = Date.now();
+    frameTimesRef.current.push(now);
+
+    // Keep last 60 frame times (2 seconds at 30fps)
+    if (frameTimesRef.current.length > 60) {
+      frameTimesRef.current.shift();
+    }
+
+    // Calculate FPS
+    if (frameTimesRef.current.length >= 2) {
+      const timeDiff = frameTimesRef.current[frameTimesRef.current.length - 1] -
+                      frameTimesRef.current[0];
+      const calculatedFPS = (frameTimesRef.current.length - 1) / (timeDiff / 1000);
+      setCurrentFPS(Math.round(calculatedFPS));
+    }
+
+    // Update metrics
     setFrameNumber(data.frame);
     setProgress(data.progress);
 
     if (data.belt_metrics) {
       setBeltMetrics(data.belt_metrics);
 
-      // Add to history for charts (keep last 100 points)
+      // Add to history for charts
       setMetricsHistory(prev => {
         const newHistory = [...prev, {
           frame: data.frame,
@@ -186,13 +216,15 @@ export default function ConveyorBeltMonitoring() {
           avg_speed: data.belt_metrics.avg_speed || 0,
           alignment: Math.abs(data.belt_metrics.alignment_deviation || 0),
           vibration: data.belt_metrics.vibration_amplitude || 0,
-          timestamp: new Date().toLocaleTimeString()
+          timestamp: new Date().toLocaleTimeString(),
+          fps: data.fps || 0
         }];
 
-        return newHistory.slice(-100); // Keep only last 100 entries
+        return newHistory.slice(-100);
       });
     }
 
+    // Draw frame immediately
     if (data.frame_image) {
       setCurrentFrame(data.frame_image);
       drawFrame(data.frame_image, data.belt_metrics);
@@ -200,7 +232,7 @@ export default function ConveyorBeltMonitoring() {
 
     if (data.is_final) {
       setIsProcessing(false);
-      console.log("Processing completed");
+      console.log("✅ Processing completed");
     }
   };
 
@@ -209,22 +241,23 @@ export default function ConveyorBeltMonitoring() {
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
+
+    // Create image and draw immediately
     const img = new Image();
-
     img.onload = () => {
-      // Set canvas size
-      canvas.width = img.width;
-      canvas.height = img.height;
+      // Update canvas size if needed
+      if (canvas.width !== img.width || canvas.height !== img.height) {
+        canvas.width = img.width;
+        canvas.height = img.height;
+      }
 
-      // Clear and draw image
+      // Clear and draw
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0);
 
-      // Draw metrics overlay only if belt is detected
+      // Draw metrics overlay if belt is detected
       if (metrics && metrics.belt_found) {
         drawMetricsOverlay(ctx, canvas, metrics);
-      } else if (metrics) {
-        drawNoBeltOverlay(ctx, canvas);
       }
     };
 
@@ -248,11 +281,6 @@ export default function ConveyorBeltMonitoring() {
                    COLORS.speed, 'bold 16px Arial');
     yPos += lineHeight;
 
-    // Avg Speed
-    drawMetricText(ctx, 20, yPos, `Avg Speed: ${metrics.avg_speed?.toFixed(2) || 0} m/min`,
-                   COLORS.speed, 'bold 16px Arial');
-    yPos += lineHeight;
-
     // Vibration
     const vibrationColor = vibration === 'High' ? COLORS.danger :
                           vibration === 'Medium' ? COLORS.warning :
@@ -268,12 +296,6 @@ export default function ConveyorBeltMonitoring() {
                           COLORS.danger;
     drawMetricText(ctx, 20, yPos,
                    `Alignment: ${deviation} px`,
-                   alignmentColor, 'bold 16px Arial');
-    yPos += lineHeight;
-
-    // Avg Alignment
-    drawMetricText(ctx, 20, yPos,
-                   `Avg Alignment: ${metrics.avg_alignment?.toFixed(1) || 0} px`,
                    alignmentColor, 'bold 16px Arial');
     yPos += lineHeight;
 
@@ -296,21 +318,6 @@ export default function ConveyorBeltMonitoring() {
     if (vibration === 'High') {
       drawWarning(ctx, canvas, "⚠️ HIGH VIBRATION DETECTED!", COLORS.danger, 80);
     }
-  };
-
-  const drawNoBeltOverlay = (ctx, canvas) => {
-    // Draw semi-transparent overlay
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    ctx.fillRect(10, 10, 320, 100);
-
-    // Draw warning text
-    ctx.fillStyle = COLORS.danger;
-    ctx.font = 'bold 20px Arial';
-    ctx.fillText("⚠️ NO BELT DETECTED", 20, 50);
-
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = '16px Arial';
-    ctx.fillText("Adjust camera angle or lighting", 20, 80);
   };
 
   const drawMetricText = (ctx, x, y, text, color, font) => {
@@ -342,6 +349,10 @@ export default function ConveyorBeltMonitoring() {
     setIsProcessing(true);
     setMetricsHistory([]);
     setCurrentFrame(null);
+    setCurrentFPS(0);
+    frameTimesRef.current = [];
+
+    // Reset metrics
     setBeltMetrics({
       speed: 0,
       avg_speed: 0,
@@ -361,10 +372,17 @@ export default function ConveyorBeltMonitoring() {
       });
 
       setJobId(response.data.job_id);
-      console.log("Processing started with job ID:", response.data.job_id);
+      console.log("✅ Processing started with job ID:", response.data.job_id);
+
+      // Ensure WebSocket is connected
+      if (connectionStatus !== "connected") {
+        connectWebSocket();
+      }
+
     } catch (error) {
-      console.error("Error starting processing:", error);
+      console.error("❌ Error starting processing:", error);
       setIsProcessing(false);
+      alert(`Failed to start processing: ${error.message}`);
     }
   };
 
@@ -376,7 +394,7 @@ export default function ConveyorBeltMonitoring() {
         job_id: jobId
       });
       setIsProcessing(false);
-      console.log("Processing stopped");
+      console.log("⏹️ Processing stopped");
     } catch (error) {
       console.error("Error stopping processing:", error);
     }
@@ -391,17 +409,17 @@ export default function ConveyorBeltMonitoring() {
     }));
   };
 
-  const getAlignmentChartData = () => {
-    return metricsHistory.map((point, index) => ({
-      name: point.timestamp,
-      alignment: point.alignment
-    }));
-  };
-
   const getVibrationChartData = () => {
     return metricsHistory.map((point, index) => ({
       name: point.timestamp,
       vibration: point.vibration
+    }));
+  };
+
+  const getFPSChartData = () => {
+    return metricsHistory.map((point, index) => ({
+      name: point.timestamp,
+      fps: point.fps || currentFPS
     }));
   };
 
@@ -426,43 +444,13 @@ export default function ConveyorBeltMonitoring() {
     ];
   };
 
-  const getBeltDetectionData = () => {
-    return [
-      {
-        name: 'Detected',
-        value: beltMetrics.belt_found ? 100 : 0,
-        color: COLORS.good
-      },
-      {
-        name: 'Not Detected',
-        value: beltMetrics.belt_found ? 0 : 100,
-        color: COLORS.danger
-      }
-    ];
-  };
-
-  // Fullscreen styles
-  const fullscreenStyles = isFullscreen ? {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    width: '100vw',
-    height: '100vh',
-    zIndex: 9999,
-    backgroundColor: '#000',
-    padding: '20px',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center'
-  } : {};
-
-  const videoContainerStyles = {
-    backgroundColor: 'white',
-    padding: '20px',
-    borderRadius: '10px',
-    boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-    ...fullscreenStyles
+  const getConnectionStatusColor = () => {
+    switch(connectionStatus) {
+      case "connected": return COLORS.good;
+      case "connecting": return COLORS.warning;
+      case "error": return COLORS.danger;
+      default: return "#666";
+    }
   };
 
   return (
@@ -472,9 +460,12 @@ export default function ConveyorBeltMonitoring() {
       backgroundColor: '#f5f5f5',
       minHeight: '100vh'
     }}>
-      <h1 style={{ color: '#333', marginBottom: '30px' }}>
+      <h1 style={{ color: '#333', marginBottom: '10px' }}>
         🏭 Conveyor Belt Monitoring System
       </h1>
+      <p style={{ color: '#666', marginBottom: '30px' }}>
+        Real-time belt speed, vibration, and alignment monitoring
+      </p>
 
       <div style={{
         display: 'grid',
@@ -512,7 +503,7 @@ export default function ConveyorBeltMonitoring() {
               >
                 {videos.map(video => (
                   <option key={video.path} value={video.path}>
-                    {video.filename || video.path}
+                    {video.filename} ({video.size_mb})
                   </option>
                 ))}
               </select>
@@ -555,23 +546,61 @@ export default function ConveyorBeltMonitoring() {
               )}
             </div>
 
-            {jobId && (
-              <div style={{
-                marginTop: '15px',
-                padding: '10px',
-                backgroundColor: '#E8F5E9',
-                borderRadius: '5px',
-                fontSize: '14px'
-              }}>
-                <strong>Job ID:</strong> {jobId}
+            {/* Connection Status */}
+            <div style={{
+              marginTop: '15px',
+              padding: '10px',
+              backgroundColor: '#f8f9fa',
+              borderRadius: '5px',
+              fontSize: '14px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <div>
+                <span style={{ fontWeight: 'bold' }}>WebSocket:</span>
+                <span style={{
+                  marginLeft: '8px',
+                  padding: '2px 8px',
+                  backgroundColor: getConnectionStatusColor(),
+                  color: 'white',
+                  borderRadius: '3px',
+                  fontSize: '12px'
+                }}>
+                  {connectionStatus.toUpperCase()}
+                </span>
               </div>
-            )}
+
+              {jobId && (
+                <div>
+                  <span style={{ fontWeight: 'bold' }}>Job ID:</span>
+                  <span style={{ marginLeft: '8px', fontFamily: 'monospace', fontSize: '12px' }}>
+                    {jobId}
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Live Video Feed */}
           <div
             ref={videoContainerRef}
-            style={videoContainerStyles}
+            style={{
+              backgroundColor: 'white',
+              padding: '20px',
+              borderRadius: '10px',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+              ...(isFullscreen && {
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                width: '100vw',
+                height: '100vh',
+                zIndex: 9999,
+                backgroundColor: '#000',
+                padding: '20px'
+              })
+            }}
           >
             <div style={{
               display: 'flex',
@@ -579,11 +608,21 @@ export default function ConveyorBeltMonitoring() {
               alignItems: 'center',
               marginBottom: '15px'
             }}>
-              <h2 style={{ color: '#333', margin: 0 }}>
-                {isFullscreen ? '🔍 FULL SCREEN - Live Monitoring' : 'Live Monitoring'}
-              </h2>
+              <div>
+                <h2 style={{ color: '#333', margin: 0 }}>
+                  {isFullscreen ? '🔍 FULL SCREEN - Live Monitoring' : 'Live Monitoring'}
+                </h2>
+                <div style={{ fontSize: '12px', color: '#666', marginTop: '5px' }}>
+                  Stream: <span style={{
+                    fontWeight: 'bold',
+                    color: currentFPS >= 25 ? '#4CAF50' :
+                           currentFPS >= 15 ? '#FF9800' : '#F44336'
+                  }}>
+                    {currentFPS} FPS
+                  </span> | Frame: {frameNumber} | Progress: {progress}%
+                </div>
+              </div>
 
-              {/* Fullscreen Toggle Button */}
               <button
                 onClick={toggleFullscreen}
                 style={{
@@ -599,7 +638,6 @@ export default function ConveyorBeltMonitoring() {
                   gap: '8px',
                   fontSize: '14px'
                 }}
-                title={isFullscreen ? 'Exit Fullscreen (Press ESC)' : 'Enter Fullscreen'}
               >
                 {isFullscreen ? (
                   <>
@@ -631,11 +669,11 @@ export default function ConveyorBeltMonitoring() {
                     ref={canvasRef}
                     style={{
                       maxWidth: '100%',
-                      maxHeight: isFullscreen ? '85vh' : '400px'
+                      maxHeight: isFullscreen ? '85vh' : '400px',
+                      display: 'block'
                     }}
                   />
 
-                  {/* Fullscreen overlay controls */}
                   {isFullscreen && (
                     <div style={{
                       position: 'absolute',
@@ -650,7 +688,7 @@ export default function ConveyorBeltMonitoring() {
                       borderRadius: '5px'
                     }}>
                       <div style={{ color: 'white', fontSize: '14px' }}>
-                        Frame: {frameNumber} | Progress: {progress}%
+                        Frame: {frameNumber} | FPS: {currentFPS} | Progress: {progress}%
                       </div>
                       <button
                         onClick={toggleFullscreen}
@@ -671,54 +709,88 @@ export default function ConveyorBeltMonitoring() {
                 </>
               ) : (
                 <div style={{ color: '#666', textAlign: 'center', padding: '20px' }}>
-                  {isProcessing
-                    ? '📹 Processing video feed...'
-                    : '🎥 Ready to start monitoring'}
-                  <div style={{ fontSize: '14px', marginTop: '10px' }}>
-                    Frame: {frameNumber} | Progress: {progress}%
-                  </div>
-                  {isFullscreen && (
-                    <div style={{ marginTop: '20px', fontSize: '12px', color: '#999' }}>
-                      Press ESC or click Exit Fullscreen to return
-                    </div>
+                  {isProcessing ? (
+                    <>
+                      <div style={{ fontSize: '48px', marginBottom: '20px' }}>📹</div>
+                      <div>Processing video stream...</div>
+                      <div style={{ fontSize: '14px', marginTop: '10px' }}>
+                        Frame: {frameNumber} | FPS: {currentFPS} | Progress: {progress}%
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: '48px', marginBottom: '20px' }}>🎥</div>
+                      <div>Ready to start monitoring</div>
+                      <div style={{ fontSize: '14px', marginTop: '10px' }}>
+                        Select a video and click "Start Monitoring"
+                      </div>
+                    </>
                   )}
                 </div>
               )}
             </div>
-
-            {!isFullscreen && (
-              <div style={{
-                marginTop: '15px',
-                padding: '10px',
-                backgroundColor: '#f8f9fa',
-                borderRadius: '5px',
-                fontSize: '12px',
-                color: '#666',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <div>
-                  <span style={{ fontWeight: 'bold' }}>Tip:</span> Click Fullscreen button for better view
-                </div>
-                <div>
-                  <span style={{ fontFamily: 'monospace' }}>ESC</span> to exit fullscreen
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
         {/* Right Column - Metrics Dashboard */}
         <div style={{ display: isFullscreen ? 'none' : 'block' }}>
-          {/* Key Metrics Cards */}
+          {/* Performance Metrics */}
+          <div style={{
+            backgroundColor: 'white',
+            padding: '20px',
+            borderRadius: '10px',
+            boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+            marginBottom: '20px'
+          }}>
+            <h2 style={{ marginBottom: '15px', color: '#333' }}>Stream Performance</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
+              <MetricCard
+                title="Current FPS"
+                value={currentFPS}
+                unit=""
+                color={currentFPS >= 25 ? COLORS.good :
+                       currentFPS >= 15 ? COLORS.warning : COLORS.danger}
+                icon="⚡"
+                subValue={currentFPS >= 25 ? "Excellent" :
+                         currentFPS >= 15 ? "Good" : "Poor"}
+              />
+
+              <MetricCard
+                title="Connection"
+                value={connectionStatus}
+                unit=""
+                color={getConnectionStatusColor()}
+                icon="📡"
+                subValue={connectionStatus === "connected" ? "Stable" : "Unstable"}
+              />
+
+              <MetricCard
+                title="Frames Processed"
+                value={frameNumber}
+                unit=""
+                color={COLORS.info}
+                icon="🎞️"
+                subValue={`Progress: ${progress}%`}
+              />
+
+              <MetricCard
+                title="Data Points"
+                value={metricsHistory.length}
+                unit=""
+                color="#795548"
+                icon="📊"
+                subValue="Last 100 frames"
+              />
+            </div>
+          </div>
+
+          {/* Belt Metrics Cards */}
           <div style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(2, 1fr)',
             gap: '15px',
             marginBottom: '20px'
           }}>
-            {/* Speed Card */}
             <MetricCard
               title="Belt Speed"
               value={`${beltMetrics.speed?.toFixed(2) || 0}`}
@@ -728,7 +800,6 @@ export default function ConveyorBeltMonitoring() {
               subValue={`Avg: ${beltMetrics.avg_speed?.toFixed(2) || 0} m/min`}
             />
 
-            {/* Vibration Card */}
             <MetricCard
               title="Vibration"
               value={beltMetrics.vibration_severity || 'Low'}
@@ -740,7 +811,6 @@ export default function ConveyorBeltMonitoring() {
               subValue={`Freq: ${beltMetrics.vibration_frequency?.toFixed(2) || 0} Hz`}
             />
 
-            {/* Alignment Card */}
             <MetricCard
               title="Alignment"
               value={`${beltMetrics.alignment_deviation || 0}`}
@@ -752,46 +822,13 @@ export default function ConveyorBeltMonitoring() {
               subValue={`Avg: ${beltMetrics.avg_alignment?.toFixed(1) || 0} px`}
             />
 
-            {/* Belt Width Card */}
-            <MetricCard
-              title="Belt Width"
-              value={`${beltMetrics.belt_width?.toFixed(1) || 0}`}
-              unit="pixels"
-              color={COLORS.info}
-              icon="📏"
-              subValue={beltMetrics.belt_found ? "Detected" : "Not detected"}
-            />
-
-            {/* Belt Detection Card */}
             <MetricCard
               title="Belt Detection"
-              value={beltMetrics.belt_found ? "YES" : "NO"}
+              value={beltMetrics.belt_found ? "DETECTED" : "NOT FOUND"}
               unit=""
               color={beltMetrics.belt_found ? COLORS.good : COLORS.danger}
               icon="🔍"
-              subValue={`Frame: ${beltMetrics.frame_number || 0}`}
-            />
-
-            {/* System Health Card */}
-            <MetricCard
-              title="System Health"
-              value={
-                beltMetrics.vibration_severity === 'Low' &&
-                Math.abs(beltMetrics.alignment_deviation) <= 20 ?
-                "GOOD" : "CHECK"
-              }
-              unit=""
-              color={
-                beltMetrics.vibration_severity === 'Low' &&
-                Math.abs(beltMetrics.alignment_deviation) <= 20 ?
-                COLORS.good : COLORS.warning
-              }
-              icon="❤️"
-              subValue={
-                beltMetrics.vibration_severity === 'Low' &&
-                Math.abs(beltMetrics.alignment_deviation) <= 20 ?
-                "All systems normal" : "Needs attention"
-              }
+              subValue={`Width: ${beltMetrics.belt_width?.toFixed(1) || 0} px`}
             />
           </div>
 
@@ -810,7 +847,6 @@ export default function ConveyorBeltMonitoring() {
               gridTemplateColumns: 'repeat(2, 1fr)',
               gap: '20px'
             }}>
-              {/* Speed Chart */}
               <div>
                 <h4 style={{ marginBottom: '10px' }}>Speed Over Time</h4>
                 <ResponsiveContainer width="100%" height={150}>
@@ -825,22 +861,32 @@ export default function ConveyorBeltMonitoring() {
                       stroke={COLORS.speed}
                       strokeWidth={2}
                       dot={false}
-                      name="Current Speed"
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="avg_speed"
-                      stroke={COLORS.info}
-                      strokeWidth={2}
-                      strokeDasharray="5 5"
-                      dot={false}
-                      name="Average Speed"
+                      name="Speed"
                     />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
 
-              {/* Vibration Chart */}
+              <div>
+                <h4 style={{ marginBottom: '10px' }}>FPS Over Time</h4>
+                <ResponsiveContainer width="100%" height={150}>
+                  <LineChart data={getFPSChartData().slice(-20)}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                    <XAxis dataKey="name" hide />
+                    <YAxis />
+                    <Tooltip />
+                    <Line
+                      type="monotone"
+                      dataKey="fps"
+                      stroke={COLORS.info}
+                      strokeWidth={2}
+                      dot={false}
+                      name="FPS"
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+
               <div>
                 <h4 style={{ marginBottom: '10px' }}>Vibration Levels</h4>
                 <ResponsiveContainer width="100%" height={150}>
@@ -852,15 +898,14 @@ export default function ConveyorBeltMonitoring() {
                     <Bar
                       dataKey="vibration"
                       fill={COLORS.vibration}
-                      name="Vibration Amplitude"
+                      name="Vibration"
                     />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
 
-              {/* Belt Health Pie Chart */}
               <div>
-                <h4 style={{ marginBottom: '10px' }}>Belt Health Status</h4>
+                <h4 style={{ marginBottom: '10px' }}>Belt Health</h4>
                 <ResponsiveContainer width="100%" height={150}>
                   <PieChart>
                     <Pie
@@ -881,155 +926,27 @@ export default function ConveyorBeltMonitoring() {
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-
-              {/* Belt Detection Pie Chart */}
-              <div>
-                <h4 style={{ marginBottom: '10px' }}>Belt Detection Status</h4>
-                <ResponsiveContainer width="100%" height={150}>
-                  <PieChart>
-                    <Pie
-                      data={getBeltDetectionData()}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={40}
-                      outerRadius={60}
-                      paddingAngle={5}
-                      dataKey="value"
-                    >
-                      {getBeltDetectionData().map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
             </div>
-          </div>
-
-          {/* System Status */}
-          <div style={{
-            backgroundColor: 'white',
-            padding: '20px',
-            borderRadius: '10px',
-            boxShadow: '0 2px 10px rgba(0,0,0,0.1)'
-          }}>
-            <h2 style={{ marginBottom: '15px', color: '#333' }}>System Status</h2>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
-              <StatusItem
-                label="Processing"
-                value={isProcessing ? 'Active' : 'Idle'}
-                status={isProcessing ? 'active' : 'idle'}
-              />
-              <StatusItem
-                label="WebSocket"
-                value={wsRef.current?.readyState === 1 ? 'Connected' : 'Disconnected'}
-                status={wsRef.current?.readyState === 1 ? 'active' : 'inactive'}
-              />
-              <StatusItem
-                label="Frame Rate"
-                value={metricsHistory.length > 1 ? '~30 FPS' : 'N/A'}
-                status="info"
-              />
-              <StatusItem
-                label="Total Frames"
-                value={frameNumber}
-                status="info"
-              />
-              <StatusItem
-                label="Progress"
-                value={`${progress}%`}
-                status={progress === 100 ? 'complete' : 'processing'}
-              />
-              <StatusItem
-                label="Data Points"
-                value={`${metricsHistory.length}`}
-                status="info"
-              />
-              <StatusItem
-                label="Belt Detected"
-                value={beltMetrics.belt_found ? 'Yes' : 'No'}
-                status={beltMetrics.belt_found ? 'active' : 'inactive'}
-              />
-              <StatusItem
-                label="Video"
-                value={selectedVideo ? 'Loaded' : 'Not Loaded'}
-                status={selectedVideo ? 'active' : 'inactive'}
-              />
-            </div>
-
-            {/* Warnings Section */}
-            {(beltMetrics.vibration_severity === 'High' || Math.abs(beltMetrics.alignment_deviation) > 50 || !beltMetrics.belt_found) && (
-              <div style={{
-                marginTop: '15px',
-                padding: '15px',
-                backgroundColor: '#FFF3CD',
-                border: '1px solid #FFEAA7',
-                borderRadius: '5px'
-              }}>
-                <h4 style={{ color: '#856404', marginBottom: '10px' }}>⚠️ Alerts</h4>
-                <ul style={{ color: '#856404', fontSize: '14px', margin: 0, paddingLeft: '20px' }}>
-                  {!beltMetrics.belt_found && (
-                    <li>• Belt not detected in current frame</li>
-                  )}
-                  {beltMetrics.vibration_severity === 'High' && (
-                    <li>• High vibration detected - Check belt tension and rollers</li>
-                  )}
-                  {beltMetrics.vibration_severity === 'Medium' && (
-                    <li>• Moderate vibration detected - Monitor closely</li>
-                  )}
-                  {Math.abs(beltMetrics.alignment_deviation) > 50 && (
-                    <li>• Belt misalignment detected - Adjust tracking system</li>
-                  )}
-                  {Math.abs(beltMetrics.alignment_deviation) > 20 && Math.abs(beltMetrics.alignment_deviation) <= 50 && (
-                    <li>• Minor alignment deviation - Monitor trend</li>
-                  )}
-                </ul>
-              </div>
-            )}
           </div>
         </div>
       </div>
 
-      {/* Fullscreen notification */}
-      {isFullscreen && (
-        <div style={{
-          position: 'fixed',
-          top: '10px',
-          right: '10px',
-          backgroundColor: 'rgba(0, 0, 0, 0.8)',
-          color: 'white',
-          padding: '10px 15px',
-          borderRadius: '5px',
-          fontSize: '14px',
-          zIndex: 10000,
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px'
-        }}>
-          <span>⛶ Fullscreen Mode Active</span>
-          <button
-            onClick={toggleFullscreen}
-            style={{
-              padding: '5px 10px',
-              backgroundColor: COLORS.danger,
-              color: 'white',
-              border: 'none',
-              borderRadius: '3px',
-              cursor: 'pointer',
-              fontSize: '12px'
-            }}
-          >
-            Exit (ESC)
-          </button>
-        </div>
-      )}
+      {/* Footer */}
+      <footer style={{
+        marginTop: '20px',
+        textAlign: 'center',
+        color: '#666',
+        fontSize: '14px',
+        padding: '10px',
+        borderTop: '1px solid #ddd'
+      }}>
+        <p>Conveyor Belt Monitoring System • Real-time Processing • {new Date().getFullYear()}</p>
+      </footer>
     </div>
   );
 }
 
-// Helper Components - Updated with subValue support
+// Helper Components
 const MetricCard = ({ title, value, unit, color, icon, subValue }) => (
   <div style={{
     backgroundColor: 'white',
@@ -1063,33 +980,3 @@ const MetricCard = ({ title, value, unit, color, icon, subValue }) => (
     </div>
   </div>
 );
-
-const StatusItem = ({ label, value, status }) => {
-  const statusColors = {
-    active: '#4CAF50',
-    inactive: '#F44336',
-    idle: '#FF9800',
-    processing: '#2196F3',
-    complete: '#4CAF50',
-    info: '#607D8B'
-  };
-
-  return (
-    <div style={{
-      padding: '10px',
-      backgroundColor: '#f8f9fa',
-      borderRadius: '5px'
-    }}>
-      <div style={{ fontSize: '12px', color: '#666', marginBottom: '5px' }}>
-        {label}
-      </div>
-      <div style={{
-        fontSize: '14px',
-        fontWeight: 'bold',
-        color: statusColors[status] || '#333'
-      }}>
-        {value}
-      </div>
-    </div>
-  );
-};
