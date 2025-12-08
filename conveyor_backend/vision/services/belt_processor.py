@@ -372,232 +372,165 @@ class BeltProcessor:
         # vision/services/belt_processor.py
         # ... (keep imports and other methods)
 
+    import cv2
+    import numpy as np
+    import logging
+
+    logger = logging.getLogger(__name__)
+
     def _detect_belt_with_details(self, frame):
-        """Enhanced belt detection with VERY AGGRESSIVE thresholds"""
+        """Enhanced conveyor belt detection with aggressive thresholds, fully fixed for shape alignment."""
         try:
             height, width = frame.shape[:2]
             frame_center = width // 2
 
-            # Try multiple preprocessing methods
-            # Method 1: Grayscale with histogram equalization
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            # --- STEP 1: Crop the ROI first ---
+            y1_crop = int(height * 0.15)
+            y2_crop = int(height * 0.9)
+            x1_crop = int(width * 0.15)
+            x2_crop = int(width * 0.85)
+
+            frame_cropped = frame[y1_crop:y2_crop, x1_crop:x2_crop]
+
+            # --- STEP 2: Compute grayscale and equalize ---
+            gray = cv2.cvtColor(frame_cropped, cv2.COLOR_BGR2GRAY)
             equalized = cv2.equalizeHist(gray)
 
-            # Method 2: Try different color channels
-            hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-            saturation = hsv[:, :, 1]  # Saturation channel often shows edges well
+            # --- STEP 3: HSV saturation ---
+            hsv = cv2.cvtColor(frame_cropped, cv2.COLOR_BGR2HSV)
+            _, s, v = cv2.split(hsv)
+            saturation = s.astype(np.uint8)
 
-            # Method 3: LAB color space
-            lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+            # --- STEP 4: LAB lightness ---
+            lab = cv2.cvtColor(frame_cropped, cv2.COLOR_BGR2LAB)
             lightness = lab[:, :, 0]
 
-            # Combine multiple channels
+            # --- STEP 5: Combine channels ---
             combined = cv2.addWeighted(equalized, 0.5, saturation, 0.3, 0)
             combined = cv2.addWeighted(combined, 0.7, lightness, 0.3, 0)
 
-            # Apply blur
+            # --- STEP 6: Blur ---
             blurred = cv2.GaussianBlur(combined, (5, 5), 1)
 
-            # VERY AGGRESSIVE Canny edge detection
-            sigma = 0.15  # VERY sensitive
-            v = np.median(blurred)
-            lower = int(max(0, (1.0 - 3 * sigma) * v))  # EXTREMELY low threshold
-            upper = int(min(255, (1.0 + 2 * sigma) * v))
-
+            # --- STEP 7: Canny edges ---
+            sigma = 0.15
+            v_median = np.median(blurred)
+            lower = int(max(0, (1.0 - 3 * sigma) * v_median))
+            upper = int(min(255, (1.0 + 2 * sigma) * v_median))
             edges_canny = cv2.Canny(blurred, lower, upper, apertureSize=3, L2gradient=True)
 
-            # ALSO try Sobel edge detection
+            # --- STEP 8: Sobel edges ---
             sobel_x = cv2.Sobel(blurred, cv2.CV_64F, 1, 0, ksize=3)
             sobel_y = cv2.Sobel(blurred, cv2.CV_64F, 0, 1, ksize=3)
             sobel_edges = cv2.magnitude(sobel_x, sobel_y)
             sobel_edges = np.uint8(np.clip(sobel_edges, 0, 255))
             _, sobel_edges = cv2.threshold(sobel_edges, 30, 255, cv2.THRESH_BINARY)
 
-            # Combine all edge detectors
+            # --- STEP 9: Combine edges ---
             edges_combined = cv2.bitwise_or(edges_canny, sobel_edges)
 
-            # VERY aggressive morphological operations
+            # --- STEP 10: Morphological ops ---
             kernel_dilate = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
             kernel_close = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 15))
-
-            # Dilate heavily to connect ALL possible edges
             edges_dilated = cv2.dilate(edges_combined, kernel_dilate, iterations=2)
-            # Close to fill gaps
             edges_closed = cv2.morphologyEx(edges_dilated, cv2.MORPH_CLOSE, kernel_close, iterations=2)
 
-            # Find ALL contours
-            contours, hierarchy = cv2.findContours(
-                edges_closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-            )
-
+            # --- STEP 11: Find contours ---
+            contours, _ = cv2.findContours(edges_closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             if not contours:
-                logger.warning("NO CONTOURS FOUND AT ALL!")
-                # Try one more time with even simpler approach
+                logger.warning("No contours found, trying Otsu fallback...")
                 _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
                 contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
                 if not contours:
                     return self._create_empty_belt_data(height, width, frame_center, edges_canny)
 
-            logger.info(f"Found {len(contours)} total contours")
-
-            # VERY LOOSE filtering - accept almost anything
+            # --- STEP 12: Filter contours ---
             belt_contours = []
-            min_area = height * width * 0.005  # Only 0.5% of frame
-            max_area = height * width * 0.9  # Up to 90% of frame
+            min_area = frame_cropped.shape[0] * frame_cropped.shape[1] * 0.005
+            max_area = frame_cropped.shape[0] * frame_cropped.shape[1] * 0.9
 
-            for idx, contour in enumerate(contours):
+            for contour in contours:
                 area = cv2.contourArea(contour)
-
-                # Skip extremely small contours
-                if area < min_area:
+                if area < min_area or area > max_area:
                     continue
-
-                # Skip extremely large contours
-                if area > max_area:
-                    continue
-
-                # Get basic properties
                 x, y, w, h = cv2.boundingRect(contour)
-
-                # Calculate VERY basic properties
-                aspect_ratio = float(w) / float(h) if h > 0 else 0.0
-
-                # EXTREMELY LOOSE criteria
-                is_possible_belt = (
-                        w > 50 and h > 20 and  # Minimum dimensions
-                        0.8 < aspect_ratio < 50.0  # Extremely wide range
-                )
-
-                if is_possible_belt:
-                    # Calculate additional properties
+                aspect_ratio = float(w) / h if h > 0 else 0
+                if w > 50 and h > 20 and 0.8 < aspect_ratio < 50.0:
                     hull = cv2.convexHull(contour)
                     hull_area = cv2.contourArea(hull)
-                    solidity = float(area) / float(hull_area) if hull_area > 0 else 0.0
-
+                    solidity = float(area) / hull_area if hull_area > 0 else 0
                     rect_area = w * h
-                    extent = float(area) / float(rect_area) if rect_area > 0 else 0.0
-
+                    extent = float(area) / rect_area if rect_area > 0 else 0
                     perimeter = cv2.arcLength(contour, True)
                     circularity = 4 * np.pi * area / (perimeter * perimeter) if perimeter > 0 else 0
-
                     belt_contours.append({
                         'contour': contour,
                         'area': float(area),
                         'bbox': [int(x), int(y), int(x + w), int(y + h)],
-                        'aspect_ratio': float(aspect_ratio),
-                        'solidity': float(solidity),
-                        'extent': float(extent),
-                        'circularity': float(circularity),
-                        'perimeter': float(perimeter),
+                        'aspect_ratio': aspect_ratio,
+                        'solidity': solidity,
+                        'extent': extent,
+                        'circularity': circularity,
+                        'perimeter': perimeter,
                         'center': (int(x + w // 2), int(y + h // 2))
                     })
 
-                    logger.info(f"Contour {idx}: area={area:.0f}, aspect={aspect_ratio:.2f}, "
-                                f"size={w}x{h}, center=({x + w // 2},{y + h // 2})")
+            # --- STEP 13: Fallback if no contours pass ---
+            if not belt_contours and contours:
+                largest_contour = max(contours, key=cv2.contourArea)
+                x, y, w, h = cv2.boundingRect(largest_contour)
+                area = cv2.contourArea(largest_contour)
+                belt_contours.append({
+                    'contour': largest_contour,
+                    'area': float(area),
+                    'bbox': [int(x), int(y), int(x + w), int(y + h)],
+                    'aspect_ratio': float(w) / h if h > 0 else 1.0,
+                    'solidity': 0.5,
+                    'extent': 0.5,
+                    'circularity': 0.3,
+                    'perimeter': cv2.arcLength(largest_contour, True),
+                    'center': (int(x + w // 2), int(y + h // 2))
+                })
 
-            if not belt_contours:
-                logger.warning("No contours passed even loose filtering!")
-                # Return the LARGEST contour anyway as last resort
-                if contours:
-                    largest_contour = max(contours, key=cv2.contourArea)
-                    area = cv2.contourArea(largest_contour)
-                    x, y, w, h = cv2.boundingRect(largest_contour)
+            # --- STEP 14: Select best contour ---
+            belt_contours.sort(key=lambda c: c['area'], reverse=True)
+            best_contour = belt_contours[0]
+            contour = best_contour['contour']
+            x1, y1, x2, y2 = best_contour['bbox']
+            w, h = x2 - x1, y2 - y1
+            belt_center_x = x1 + w // 2
+            belt_center_y = y1 + h // 2
+            alignment_deviation = belt_center_x - (frame_cropped.shape[1] // 2)
 
-                    # Force it to be the belt
-                    belt_contours.append({
-                        'contour': largest_contour,
-                        'area': float(area),
-                        'bbox': [int(x), int(y), int(x + w), int(y + h)],
-                        'aspect_ratio': float(w) / float(h) if h > 0 else 1.0,
-                        'solidity': 0.5,
-                        'extent': 0.5,
-                        'circularity': 0.3,
-                        'perimeter': cv2.arcLength(largest_contour, True),
-                        'center': (int(x + w // 2), int(y + h // 2))
-                    })
-                    logger.warning(f"Using largest contour as fallback: {w}x{h}")
+            # --- STEP 15: Create mask aligned with cropped frame ---
+            belt_mask = np.zeros(frame_cropped.shape[:2], dtype=np.uint8)
+            cv2.drawContours(belt_mask, [contour], -1, 255, -1)
+            edge_points_in_belt = np.sum((edges_canny > 0) & (belt_mask > 0))
 
-            # SIMPLE selection - just pick the largest acceptable contour
-            if belt_contours:
-                # Sort by area (largest first)
-                belt_contours.sort(key=lambda c: c['area'], reverse=True)
-                best_contour = belt_contours[0]
+            # --- STEP 16: Optional mapping back to full frame coordinates ---
+            contour_full = contour + [x1_crop, y1_crop]
+            bbox_full = [x1 + x1_crop, y1 + y1_crop, x2 + x1_crop, y2 + y1_crop]
 
-                contour = best_contour['contour']
-                area = best_contour['area']
-                bbox = best_contour['bbox']
-                x, y, x2, y2 = bbox
-                w, h = x2 - x, y2 - y
-
-                belt_center_x = x + w // 2
-                belt_center_y = y + h // 2
-                alignment_deviation = belt_center_x - frame_center
-
-                # Find corner points
-                corners = self._find_corner_points(contour, max_corners=50, quality=0.01, min_distance=5)
-
-                # Calculate convex hull
-                hull = cv2.convexHull(contour)
-                hull_area = cv2.contourArea(hull)
-
-                # Calculate minimum area rectangle
-                rect = cv2.minAreaRect(contour)
-                box = cv2.boxPoints(rect)
-                box = np.int0(box)
-                min_area_rect_area = cv2.contourArea(box)
-
-                # Calculate belt orientation
-                angle = rect[2]
-                if rect[1][0] < rect[1][1]:
-                    angle += 90
-
-                # Create mask for visualization
-                belt_mask = np.zeros((height, width), dtype=np.uint8)
-                cv2.drawContours(belt_mask, [contour], -1, 255, -1)
-                edge_points_in_belt = np.sum((edges_canny > 0) & (belt_mask > 0))
-
-                logger.info(f"✅ BELT DETECTED: {w}x{h} at ({belt_center_x},{belt_center_y})")
-
-                return {
-                    'belt_found': True,
-                    'belt_bbox': bbox,
-                    'belt_center': (int(belt_center_x), int(belt_center_y)),
-                    'belt_width': float(w),
-                    'belt_height': float(h),
-                    'belt_area_pixels': float(area),
-                    'belt_area_mm2': None,
-                    'belt_physical_width_mm': None,
-                    'belt_physical_height_mm': None,
-                    'alignment_deviation': int(alignment_deviation),
-                    'frame_center': int(frame_center),
-                    'contour': contour,
-                    'edges': edges_canny,
-                    'contour_points': int(len(contour)),
-                    'edge_points': int(edge_points_in_belt),
-                    'corner_points': int(len(corners)),
-                    'corners': corners,
-                    'convex_hull': hull,
-                    'convex_hull_area': float(hull_area),
-                    'min_area_rect': box,
-                    'min_area_rect_area': float(min_area_rect_area),
-                    'belt_orientation': float(angle),
-                    'aspect_ratio': float(best_contour['aspect_ratio']),
-                    'solidity': float(best_contour['solidity']),
-                    'extent': float(best_contour['extent']),
-                    'circularity': float(best_contour['circularity']),
-                    'belt_mask': belt_mask,
-                    'confidence': 0.8  # High confidence for fallback
-                }
-
-            return self._create_empty_belt_data(height, width, frame_center, edges_canny)
+            return {
+                'belt_found': True,
+                'belt_bbox': bbox_full,
+                'belt_center': (belt_center_x + x1_crop, belt_center_y + y1_crop),
+                'belt_width': float(w),
+                'belt_height': float(h),
+                'belt_area_pixels': float(best_contour['area']),
+                'alignment_deviation': int(alignment_deviation),
+                'frame_center': frame_center,
+                'contour': contour_full,
+                'edges': edges_canny,
+                'edge_points': int(edge_points_in_belt),
+                'belt_mask': belt_mask,
+                'confidence': 0.8
+            }
 
         except Exception as e:
             logger.error(f"Error in belt detection: {e}", exc_info=True)
             height, width = frame.shape[:2] if 'frame' in locals() else (0, 0)
             return self._create_empty_belt_data(height, width, width // 2 if width > 0 else 0, None)
-
-
 
     def set_detection_parameters(self, parameters=None):
         """Set detection parameters for debugging"""
