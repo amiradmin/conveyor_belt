@@ -202,8 +202,8 @@ class BeltProcessor:
                         alignment_history = alignment_history[-50:]
                     if len(area_history) > 50:
                         area_history = area_history[-50:]
-
-                vibration = self.utils.calculate_vibration_from_area(area_history)
+                vibration={}
+                # vibration = self.utils.calculate_vibration_from_area(area_history)
 
                 avg_speed = float(np.mean(speed_history).item()) if speed_history else 0.0
                 avg_alignment = float(np.mean(alignment_history).item()) if alignment_history else 0.0
@@ -214,9 +214,12 @@ class BeltProcessor:
                     'avg_speed': float(avg_speed),
                     'alignment_deviation': int(belt_data['alignment_deviation']),
                     'avg_alignment': float(avg_alignment),
-                    'vibration_amplitude': float(vibration['amplitude']),
-                    'vibration_frequency': float(vibration['frequency']),
-                    'vibration_severity': str(vibration['severity']),
+                    # 'vibration_amplitude': float(vibration['amplitude']),
+                    # 'vibration_frequency': float(vibration['frequency']),
+                    # 'vibration_severity': str(vibration['severity']),
+                    'vibration_amplitude': 0.2,
+                    'vibration_frequency': 0.2,
+                    'vibration_severity': "High",
                     'belt_width': float(belt_data['belt_width']),
                     'belt_height': float(belt_data['belt_height']),
                     'belt_found': bool(belt_data['belt_found']),
@@ -250,7 +253,7 @@ class BeltProcessor:
                         replay_buffer['timestamps'].append(float(current_time))
                         replay_buffer['speeds'].append(float(speed))
                         replay_buffer['alignments'].append(float(belt_data['alignment_deviation']))
-                        replay_buffer['vibrations'].append(float(vibration['amplitude']))
+                        # replay_buffer['vibrations'].append(float(vibration['amplitude']))
 
                 message_data = {
                     "type": "progress_message",
