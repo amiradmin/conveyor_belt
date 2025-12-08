@@ -39,59 +39,146 @@ class BeltUtils:
                 return None
 
     def calculate_speed_fast(self, prev_frame, curr_frame, prev_belt_data, curr_belt_data, fps):
-        """Calculate belt speed using optical flow"""
+        """Calculate belt speed using optical flow safely"""
         try:
             if not prev_belt_data['belt_found'] or not curr_belt_data['belt_found']:
                 return 0.0
 
             height, width = prev_frame.shape[:2]
 
-            prev_mask = prev_belt_data.get('belt_mask', np.zeros((height, width), dtype=np.uint8))
-            curr_mask = curr_belt_data.get('belt_mask', np.zeros((height, width), dtype=np.uint8))
-
+            # Convert frames to grayscale
             prev_gray = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
             curr_gray = cv2.cvtColor(curr_frame, cv2.COLOR_BGR2GRAY)
 
-            prev_gray = cv2.bitwise_and(prev_gray, prev_gray, mask=prev_mask)
-            curr_gray = cv2.bitwise_and(curr_gray, curr_gray, mask=curr_mask)
+            # Debug: Check frame sizes
+            logger.debug(f"Frame sizes - Prev: {prev_gray.shape}, Curr: {curr_gray.shape}")
 
-            flow = cv2.calcOpticalFlowFarneback(
-                prev_gray, curr_gray, None,
-                pyr_scale=0.5, levels=3, winsize=15,
-                iterations=3, poly_n=5, poly_sigma=1.2,
-                flags=0
-            )
+            # Safe mask creation function
+            def create_safe_mask(mask_data, ref_height, ref_width):
+                """Create a safe mask that matches reference dimensions"""
+                if mask_data is None:
+                    return np.zeros((ref_height, ref_width), dtype=np.uint8)
 
+                # If mask is a numpy array
+                if isinstance(mask_data, np.ndarray):
+                    mask = mask_data.astype(np.uint8)
+
+                    # Check if mask needs resizing
+                    if mask.shape != (ref_height, ref_width):
+                        logger.debug(f"Resizing mask from {mask.shape} to {(ref_height, ref_width)}")
+                        mask = cv2.resize(mask, (ref_width, ref_height),
+                                          interpolation=cv2.INTER_NEAREST)
+                        mask = (mask > 0).astype(np.uint8) * 255
+
+                    return mask
+
+                # If mask is a list or other type
+                return np.zeros((ref_height, ref_width), dtype=np.uint8)
+
+            # Create masks that match frame dimensions
+            prev_mask = create_safe_mask(prev_belt_data.get('belt_mask'), height, width)
+            curr_mask = create_safe_mask(curr_belt_data.get('belt_mask'), height, width)
+
+            # Debug: Check mask sizes
+            logger.debug(f"Mask sizes - Prev: {prev_mask.shape}, Curr: {curr_mask.shape}")
+
+            # Verify mask dimensions match frame dimensions
+            if prev_gray.shape != prev_mask.shape:
+                logger.error(f"Mask shape mismatch: gray={prev_gray.shape}, mask={prev_mask.shape}")
+                # Create proper mask
+                prev_mask = np.zeros_like(prev_gray, dtype=np.uint8)
+
+            if curr_gray.shape != curr_mask.shape:
+                logger.error(f"Mask shape mismatch: gray={curr_gray.shape}, mask={curr_mask.shape}")
+                # Create proper mask
+                curr_mask = np.zeros_like(curr_gray, dtype=np.uint8)
+
+            # Apply masks using bitwise operations
+            try:
+                prev_gray_masked = cv2.bitwise_and(prev_gray, prev_gray, mask=prev_mask)
+                curr_gray_masked = cv2.bitwise_and(curr_gray, curr_gray, mask=curr_mask)
+            except Exception as mask_error:
+                logger.error(f"Error applying masks: {mask_error}")
+                # Fallback: use unmasked frames
+                prev_gray_masked = prev_gray.copy()
+                curr_gray_masked = curr_gray.copy()
+
+            # Check if we have enough non-zero pixels to compute optical flow
+            non_zero_pixels = np.count_nonzero(prev_mask)
+            if non_zero_pixels < 100:  # Too few pixels to compute reliable flow
+                logger.debug(f"Insufficient mask pixels: {non_zero_pixels}")
+                return 0.0
+
+            # Compute optical flow with error handling
+            try:
+                flow = cv2.calcOpticalFlowFarneback(
+                    prev_gray_masked, curr_gray_masked, None,
+                    pyr_scale=0.5,
+                    levels=3,
+                    winsize=15,
+                    iterations=3,
+                    poly_n=5,
+                    poly_sigma=1.2,
+                    flags=0
+                )
+            except Exception as flow_error:
+                logger.error(f"Error computing optical flow: {flow_error}")
+                return 0.0
+
+            if flow is None:
+                logger.error("Optical flow computation returned None")
+                return 0.0
+
+            # Extract horizontal flow component
             flow_x = flow[..., 0]
 
+            # Only consider pixels within the mask
             mask_indices = np.where(prev_mask > 0)
-            if len(mask_indices[0]) > 0:
-                movements = flow_x[mask_indices]
 
-                valid_movements = movements[np.abs(movements) > 0.1]
+            if len(mask_indices[0]) == 0:
+                logger.debug("No valid mask pixels for flow calculation")
+                return 0.0
 
-                if len(valid_movements) > 0:
-                    avg_movement = float(np.mean(valid_movements))
+            movements = flow_x[mask_indices]
 
-                    pixel_to_meter = 0.001
+            # Filter out very small movements (noise)
+            movement_threshold = 0.1
+            valid_movements = movements[np.abs(movements) > movement_threshold]
 
-                    if curr_belt_data.get('belt_physical_width_mm') and curr_belt_data.get('belt_width'):
-                        physical_width_mm = float(curr_belt_data['belt_physical_width_mm'])
-                        pixel_width = float(curr_belt_data['belt_width'])
-                        if pixel_width > 0:
-                            pixel_to_meter = (physical_width_mm / 1000.0) / pixel_width
+            if len(valid_movements) == 0:
+                return 0.0
 
-                    speed_m_per_sec = abs(avg_movement) * float(fps) * pixel_to_meter
-                    speed_m_per_min = speed_m_per_sec * 60.0
+            # Calculate average movement
+            avg_movement = float(np.mean(valid_movements))
 
-                    return float(speed_m_per_min)
+            # Convert pixels to meters
+            pixel_to_meter = 0.001  # Default
 
-            return 0.0
+            # Try to use physical calibration if available
+            if curr_belt_data.get('belt_physical_width_mm') and curr_belt_data.get('belt_width'):
+                try:
+                    physical_width_mm = float(curr_belt_data['belt_physical_width_mm'])
+                    pixel_width = float(curr_belt_data['belt_width'])
+
+                    if pixel_width > 0:
+                        pixel_to_meter = (physical_width_mm / 1000.0) / pixel_width
+                        logger.debug(f"Using calibrated pixel_to_meter: {pixel_to_meter}")
+                except Exception as calib_error:
+                    logger.error(f"Error in calibration conversion: {calib_error}")
+
+            # Calculate speed
+            speed_m_per_sec = abs(avg_movement) * float(fps) * pixel_to_meter
+            speed_m_per_min = speed_m_per_sec * 60.0
+
+            logger.debug(f"Speed calculation: movement={avg_movement:.3f}px, "
+                         f"fps={fps}, conversion={pixel_to_meter:.6f}, "
+                         f"result={speed_m_per_min:.2f} m/min")
+
+            return float(speed_m_per_min)
 
         except Exception as e:
-            logger.error(f"Error calculating speed: {e}")
+            logger.error(f"Error calculating speed: {e}", exc_info=True)
             return 0.0
-
     def calculate_vibration_from_area(self, area_history):
         """Calculate vibration from area variations"""
         try:

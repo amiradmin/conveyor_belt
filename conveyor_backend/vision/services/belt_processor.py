@@ -185,11 +185,11 @@ class BeltProcessor:
                 belt_data = self.detector.detect_belt_with_details(frame)
 
                 speed = 0.0
-                if prev_frame is not None and prev_belt_data is not None and belt_data['belt_found']:
-                    speed = self.utils.calculate_speed_fast(
-                        prev_frame, frame, prev_belt_data, belt_data, target_fps
-                    )
-                    speed = float(speed)
+                # if prev_frame is not None and prev_belt_data is not None and belt_data['belt_found']:
+                #     speed = self.utils.calculate_speed_fast(
+                #         prev_frame, frame, prev_belt_data, belt_data, target_fps
+                #     )
+                #     speed = float(speed)
 
                 if belt_data['belt_found']:
                     speed_history.append(float(speed))
