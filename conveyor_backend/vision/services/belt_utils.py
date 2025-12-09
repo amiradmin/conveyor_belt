@@ -222,58 +222,139 @@ class BeltUtils:
                 'severity': 'Low'
             }
 
-    def draw_enhanced_visualizations(self, frame, belt_data, metrics):
-        """Draw ONLY belt visualization without any text overlays"""
-        vis_frame = frame.copy()
 
+    class BeltUtils:
+        # existing methods ...
+
+        def calculate_speed_kmh(self, prev_frame, curr_frame, prev_belt, curr_belt, fps, calibration_data=None):
+            """
+            Calculate belt speed in km/h.
+            - prev_frame, curr_frame: frames
+            - prev_belt, curr_belt: belt detection info
+            - fps: frames per second
+            - calibration_data: dict with 'pixels_per_mm'
+            """
+            try:
+                speed_px = self.calculate_speed_fast(prev_frame, curr_frame, prev_belt, curr_belt,
+                                                     fps)  # pixels per frame
+                if calibration_data and calibration_data.get('pixels_per_mm'):
+                    pixels_per_mm = float(calibration_data['pixels_per_mm'])
+                else:
+                    pixels_per_mm = 1.0  # fallback if calibration not set
+
+                # Convert pixels → meters
+                meters_per_frame = (speed_px / pixels_per_mm) / 1000.0  # mm → m
+                speed_m_s = meters_per_frame * fps
+                speed_kmh = speed_m_s * 3.6  # m/s → km/h
+                return float(speed_kmh)
+            except Exception as e:
+                logger.error(f"Error calculating speed in km/h: {e}")
+                return 0.0
+
+    def draw_enhanced_visualizations(self, frame, belt_data, metrics):
+        """Draw enhanced visualizations with area measurement and speed display"""
+        vis_frame = frame.copy()
+        height, width = frame.shape[:2]
+
+        # Colors
+        COLOR_BLUE = (255, 0, 0)
+        COLOR_GREEN = (0, 255, 0)
+        COLOR_YELLOW = (0, 255, 255)
+        COLOR_RED = (0, 0, 255)
+        COLOR_MAGENTA = (255, 0, 255)
+        COLOR_CYAN = (255, 255, 0)
+        COLOR_ORANGE = (0, 165, 255)
+        COLOR_WHITE = (255, 255, 255)
+
+        # No belt detected
         if not belt_data['belt_found']:
-            # Return frame without any text - just the original frame
+            cv2.putText(vis_frame, "NO BELT DETECTED",
+                        (width // 2 - 120, height // 2),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, COLOR_RED, 2)
             return vis_frame
 
-        # Draw belt contour if available
+        # Draw belt contour, convex hull, min area rect
         if belt_data.get('contour') is not None:
             contour = belt_data['contour']
-
-            # Draw filled contour with semi-transparency
             overlay = vis_frame.copy()
-            cv2.drawContours(overlay, [contour], -1, (0, 100, 255), -1)  # Orange fill
-            cv2.addWeighted(overlay, 0.3, vis_frame, 0.7, 0, vis_frame)  # 30% transparency
+            cv2.drawContours(overlay, [contour], -1, (0, 100, 255), -1)
+            cv2.addWeighted(overlay, 0.3, vis_frame, 0.7, 0, vis_frame)
+            cv2.drawContours(vis_frame, [contour], -1, COLOR_YELLOW, 2)
+            for point in contour[::10]:
+                x, y = point[0]
+                cv2.circle(vis_frame, (x, y), 2, COLOR_BLUE, -1)
+            if belt_data.get('convex_hull') is not None:
+                cv2.drawContours(vis_frame, [belt_data['convex_hull']], -1, COLOR_MAGENTA, 2)
+            if belt_data.get('min_area_rect') is not None:
+                cv2.drawContours(vis_frame, [belt_data['min_area_rect']], -1, COLOR_GREEN, 2)
+                rect_center = tuple(np.mean(belt_data['min_area_rect'], axis=0).astype(int))
+                cv2.putText(vis_frame, "Min Area Rect",
+                            (rect_center[0] - 50, rect_center[1] - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLOR_GREEN, 1)
 
-            # Draw contour outline
-            cv2.drawContours(vis_frame, [contour], -1, (0, 255, 0), 2)  # Green outline
+        # Draw edges
+        if belt_data.get('edges') is not None:
+            edges = belt_data['edges']
+            y_indices, x_indices = np.where(edges > 0)
+            for x, y in zip(x_indices[:300], y_indices[:300]):
+                cv2.circle(vis_frame, (x, y), 1, COLOR_GREEN, -1)
 
-        # Draw center alignment line (optional visual guide)
-        height, width = frame.shape[:2]
-        frame_center = belt_data['frame_center']
-        cv2.line(vis_frame, (frame_center, 0), (frame_center, height), (200, 200, 200), 1)
-
-        # Draw alignment arrow (optional visual guide)
-        deviation = belt_data['alignment_deviation']
-        arrow_y = height - 50
-        alignment_color = (0, 165, 255) if abs(deviation) > 20 else (0, 255, 0)
-        cv2.arrowedLine(vis_frame, (frame_center, arrow_y),
-                        (frame_center + deviation, arrow_y), alignment_color, 2, tipLength=0.03)
-
-        # OPTIONAL: Draw small corner points (visual only, no text)
+        # Draw corners
         if belt_data.get('corners') is not None:
             for corner in belt_data['corners']:
                 if len(corner) == 2:
                     x, y = corner
-                    cv2.circle(vis_frame, (x, y), 3, (0, 0, 255), -1)  # Small red dots
+                    cv2.circle(vis_frame, (x, y), 6, COLOR_RED, -1)
 
-        # OPTIONAL: Draw convex hull (visual only, no text)
-        if belt_data.get('convex_hull') is not None:
-            cv2.drawContours(vis_frame, [belt_data['convex_hull']], -1, (255, 0, 255), 1)
+        # Centroid and area info
+        if belt_data['belt_found'] and belt_data.get('contour') is not None:
+            M = cv2.moments(belt_data['contour'])
+            if M['m00'] != 0:
+                centroid_x = int(M['m10'] / M['m00'])
+                centroid_y = int(M['m01'] / M['m00'])
+                cv2.circle(vis_frame, (centroid_x, centroid_y), 8, COLOR_CYAN, -1)
+                cv2.circle(vis_frame, (centroid_x, centroid_y), 10, COLOR_CYAN, 2)
 
-        # OPTIONAL: Draw rotated rectangle (visual only, no text)
-        if belt_data.get('min_area_rect') is not None:
-            cv2.drawContours(vis_frame, [belt_data['min_area_rect']], -1, (0, 255, 0), 1)
+                area_text = f"Area: {belt_data['belt_area_pixels']:.0f} px²"
+                if belt_data.get('belt_area_mm2'):
+                    area_text += f"\n{belt_data['belt_area_mm2']:.0f} mm²"
 
-        # OPTIONAL: Draw some edge points (visual only, no text)
-        if belt_data.get('edges') is not None:
-            edges = belt_data['edges']
-            y_indices, x_indices = np.where(edges > 0)
-            for x, y in zip(x_indices[:100], y_indices[:100]):  # Limit to 100 points
-                cv2.circle(vis_frame, (x, y), 1, (0, 255, 0), -1)  # Tiny green dots
+                text_size = cv2.getTextSize(area_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0]
+                cv2.rectangle(vis_frame,
+                              (centroid_x - text_size[0] // 2 - 5, centroid_y + 20 - text_size[1] - 5),
+                              (centroid_x + text_size[0] // 2 + 5, centroid_y + 20 + 5),
+                              (0, 0, 0), -1)
+                cv2.putText(vis_frame, area_text,
+                            (centroid_x - text_size[0] // 2, centroid_y + 20),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLOR_WHITE, 1)
+
+        # Frame center and alignment arrow
+        frame_center = belt_data.get('frame_center', width // 2)
+        cv2.line(vis_frame, (frame_center, 0), (frame_center, height), (200, 200, 200), 2)
+        deviation = belt_data.get('alignment_deviation', 0)
+        arrow_y = height - 50
+        alignment_color = COLOR_ORANGE if abs(deviation) > 20 else COLOR_GREEN
+        cv2.arrowedLine(vis_frame, (frame_center, arrow_y),
+                        (frame_center + deviation, arrow_y), alignment_color, 3, tipLength=0.05)
+
+        # Overlay belt speed in km/h
+        speed_text = f"Speed: {metrics.get('speed', 0.0):.1f} km/h"
+        cv2.putText(vis_frame, speed_text, (20, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, COLOR_GREEN, 2)
+
+        # Warnings
+        warning_y = 60
+        if abs(deviation) > 50:
+            cv2.putText(vis_frame, "⚠ MISALIGNMENT",
+                        (20, warning_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, COLOR_ORANGE, 2)
+            warning_y += 30
+
+        area_px = belt_data.get('belt_area_pixels', 0)
+        if area_px > 0:
+            expected_area_ratio = area_px / (height * width)
+            if expected_area_ratio < 0.1:
+                cv2.putText(vis_frame, "⚠ SMALL BELT AREA",
+                            (20, warning_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, COLOR_ORANGE, 2)
 
         return vis_frame
+

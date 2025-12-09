@@ -121,7 +121,7 @@ class BeltProcessor:
             raise
 
     def _process_video_stream(self, job_id, video_path):
-        """Main video processing thread with area detection"""
+        """Main video processing thread with area detection and speed in km/h"""
         channel_layer = get_channel_layer()
 
         try:
@@ -167,6 +167,7 @@ class BeltProcessor:
                 fps_frame_count += 1
                 current_time = time.time()
 
+                # FPS calculation
                 if current_time - fps_start_time >= 1.0:
                     current_fps = float(fps_frame_count) / (current_time - fps_start_time)
                     with self.job_lock:
@@ -184,15 +185,17 @@ class BeltProcessor:
 
                 belt_data = self.detector.detect_belt_with_details(frame)
 
-                speed = 0.0
-                # if prev_frame is not None and prev_belt_data is not None and belt_data['belt_found']:
-                #     speed = self.utils.calculate_speed_fast(
-                #         prev_frame, frame, prev_belt_data, belt_data, target_fps
-                #     )
-                #     speed = float(speed)
+                # Calculate speed in km/h
+                if prev_frame is not None and prev_belt_data is not None and belt_data['belt_found']:
+                    speed_m_per_s = self.utils.calculate_speed_fast(
+                        prev_frame, frame, prev_belt_data, belt_data, target_fps
+                    )
+                    speed_kmh = float(speed_m_per_s) * 3.6
+                else:
+                    speed_kmh = 0.0
 
                 if belt_data['belt_found']:
-                    speed_history.append(float(speed))
+                    speed_history.append(speed_kmh)
                     alignment_history.append(float(abs(belt_data['alignment_deviation'])))
                     area_history.append(float(belt_data['belt_area_pixels']))
 
@@ -202,21 +205,16 @@ class BeltProcessor:
                         alignment_history = alignment_history[-50:]
                     if len(area_history) > 50:
                         area_history = area_history[-50:]
-                vibration={}
-                # vibration = self.utils.calculate_vibration_from_area(area_history)
 
                 avg_speed = float(np.mean(speed_history).item()) if speed_history else 0.0
                 avg_alignment = float(np.mean(alignment_history).item()) if alignment_history else 0.0
                 avg_area = float(np.mean(area_history).item()) if area_history else 0.0
 
                 metrics = {
-                    'speed': float(speed),
+                    'speed': float(speed_kmh),
                     'avg_speed': float(avg_speed),
                     'alignment_deviation': int(belt_data['alignment_deviation']),
                     'avg_alignment': float(avg_alignment),
-                    # 'vibration_amplitude': float(vibration['amplitude']),
-                    # 'vibration_frequency': float(vibration['frequency']),
-                    # 'vibration_severity': str(vibration['severity']),
                     'vibration_amplitude': 0.2,
                     'vibration_frequency': 0.2,
                     'vibration_severity': "High",
@@ -225,8 +223,7 @@ class BeltProcessor:
                     'belt_found': bool(belt_data['belt_found']),
                     'frame_number': int(frame_no),
                     'belt_area_pixels': float(belt_data['belt_area_pixels']),
-                    'belt_area_mm2': float(belt_data.get('belt_area_mm2')) if belt_data.get(
-                        'belt_area_mm2') is not None else None,
+                    'belt_area_mm2': float(belt_data.get('belt_area_mm2')) if belt_data.get('belt_area_mm2') else None,
                     'avg_belt_area': float(avg_area),
                     'contour_points': int(belt_data.get('contour_points', 0)),
                     'edge_points': int(belt_data.get('edge_points', 0)),
@@ -237,6 +234,7 @@ class BeltProcessor:
                     'extent': float(belt_data.get('extent', 0))
                 }
 
+                # Draw frame with speed
                 annotated_frame = self.utils.draw_enhanced_visualizations(frame, belt_data, metrics)
 
                 _, buffer = cv2.imencode('.jpg', annotated_frame, [
@@ -246,15 +244,16 @@ class BeltProcessor:
 
                 progress = int((frame_no / total_frames) * 100) if total_frames > 0 else 0
 
+                # Update replay buffer
                 with self.job_lock:
                     replay_buffer = self.replay_buffers[job_id]
                     if len(replay_buffer['frames']) < 300:
                         replay_buffer['frames'].append(frame_base64)
                         replay_buffer['timestamps'].append(float(current_time))
-                        replay_buffer['speeds'].append(float(speed))
+                        replay_buffer['speeds'].append(float(speed_kmh))
                         replay_buffer['alignments'].append(float(belt_data['alignment_deviation']))
-                        # replay_buffer['vibrations'].append(float(vibration['amplitude']))
 
+                # Send progress via WebSocket
                 message_data = {
                     "type": "progress_message",
                     "frame": int(frame_no),
@@ -273,6 +272,7 @@ class BeltProcessor:
                 except Exception as e:
                     logger.error(f"WebSocket send error: {e}")
 
+                # Update DB every 30 frames
                 if frame_no % 30 == 0:
                     try:
                         ProcessingJob.objects.filter(job_id=job_id).update(
@@ -288,6 +288,7 @@ class BeltProcessor:
 
             cap.release()
 
+            # Final stats and completion
             final_stats = {
                 "frames_processed": int(frame_no),
                 "total_frames": int(total_frames),
@@ -310,7 +311,7 @@ class BeltProcessor:
                 "type": "progress_message",
                 "frame": int(frame_no),
                 "progress": 100,
-                "belt_metrics": self._prepare_serializable_metrics(metrics if 'metrics' in locals() else {}),
+                "belt_metrics": self._prepare_serializable_metrics(metrics),
                 "frame_image": frame_base64 if 'frame_base64' in locals() else None,
                 "fps": float(self.jobs[job_id].get('fps', 0)),
                 "is_final": True,
@@ -330,22 +331,15 @@ class BeltProcessor:
 
         except Exception as e:
             logger.exception(f"Error processing video: {e}")
-            try:
-                ProcessingJob.objects.filter(job_id=job_id).update(
-                    status="error",
-                    result={"error": str(e)},
-                    progress=0
-                )
-            except Exception as db_error:
-                logger.error(f"Database error: {db_error}")
-
+            ProcessingJob.objects.filter(job_id=job_id).update(
+                status="error",
+                result={"error": str(e)},
+                progress=0
+            )
             try:
                 async_to_sync(channel_layer.group_send)(
                     "frame_progress",
-                    {
-                        "type": "error_message",
-                        "error": str(e)
-                    }
+                    {"type": "error_message", "error": str(e)}
                 )
             except Exception as ws_error:
                 logger.error(f"WebSocket error: {ws_error}")

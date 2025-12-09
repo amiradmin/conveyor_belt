@@ -268,56 +268,30 @@ export default function ConveyorBeltMonitoring() {
     const deviation = metrics.alignment_deviation || 0;
     const vibration = metrics.vibration_severity || 'Low';
 
-    // Draw semi-transparent overlay for text
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    ctx.fillRect(10, 10, 320, 200);
+
 
     // Draw metrics text
     let yPos = 35;
     const lineHeight = 25;
 
-    // Speed
-    drawMetricText(ctx, 20, yPos, `Speed: ${metrics.speed?.toFixed(2) || 0} m/min`,
-                   COLORS.speed, 'bold 16px Arial');
+
     yPos += lineHeight;
 
     // Vibration
-    const vibrationColor = vibration === 'High' ? COLORS.danger :
-                          vibration === 'Medium' ? COLORS.warning :
-                          COLORS.good;
-    drawMetricText(ctx, 20, yPos,
-                   `Vibration: ${vibration} (${metrics.vibration_amplitude?.toFixed(3) || 0})`,
-                   vibrationColor, 'bold 16px Arial');
+
     yPos += lineHeight;
 
     // Alignment
-    const alignmentColor = Math.abs(deviation) <= 20 ? COLORS.good :
-                          Math.abs(deviation) <= 50 ? COLORS.warning :
-                          COLORS.danger;
-    drawMetricText(ctx, 20, yPos,
-                   `Alignment: ${deviation} px`,
-                   alignmentColor, 'bold 16px Arial');
+
     yPos += lineHeight;
 
-    // Belt Width
-    drawMetricText(ctx, 20, yPos,
-                   `Belt Width: ${metrics.belt_width?.toFixed(1) || 0} px`,
-                   COLORS.info, 'bold 16px Arial');
+
     yPos += lineHeight;
 
-    // Frame Number
-    drawMetricText(ctx, 20, yPos,
-                   `Frame: ${metrics.frame_number || 0}`,
-                   '#FFFFFF', 'bold 16px Arial');
+
 
     // Draw warnings if needed
-    if (Math.abs(deviation) > 50) {
-      drawWarning(ctx, canvas, "⚠️ BELT MISALIGNED!", COLORS.danger);
-    }
 
-    if (vibration === 'High') {
-      drawWarning(ctx, canvas, "⚠️ HIGH VIBRATION DETECTED!", COLORS.danger, 80);
-    }
   };
 
   const drawMetricText = (ctx, x, y, text, color, font) => {
