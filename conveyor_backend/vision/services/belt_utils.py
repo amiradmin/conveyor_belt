@@ -173,7 +173,7 @@ class BeltUtils:
             return {'amplitude': 0.0, 'frequency': 0.0, 'severity': 'Low'}
 
     def draw_enhanced_visualizations(self, frame, belt_data, metrics):
-        """Draw robust visualizations on the provided BGR frame."""
+        """Draw robust visualizations on the provided BGR frame with dark background for text."""
         try:
             vis = frame.copy()
             h, w = vis.shape[:2]
@@ -186,7 +186,7 @@ class BeltUtils:
             COLOR_YELLOW = (0, 255, 255)
             COLOR_ORANGE = (0, 165, 255)
             COLOR_WHITE = (255, 255, 255)
-            COLOR_BG = (0, 0, 0)
+            COLOR_BG = (0, 0, 0)  # dark background
 
             # If no belt, show message
             if not belt_data.get('belt_found', False):
@@ -194,17 +194,15 @@ class BeltUtils:
                             cv2.FONT_HERSHEY_SIMPLEX, 1.0, COLOR_RED, 2, cv2.LINE_AA)
                 return vis
 
-            # Draw full contour (if present)
+            # Draw contours, edges, lines, etc. (existing logic)
             contour = belt_data.get('contour')
             if contour is not None and len(contour) > 2:
                 try:
                     cv2.drawContours(vis, [contour], -1, COLOR_GREEN, 2)
                 except Exception:
-                    # contour might be in unexpected dtype/shape — safe conversion
                     cnt = np.array(contour, dtype=np.int32).reshape(-1, 1, 2)
                     cv2.drawContours(vis, [cnt], -1, COLOR_GREEN, 2)
 
-            # Draw convex hull and min area rect if available
             if belt_data.get('convex_hull') is not None:
                 cv2.drawContours(vis, [belt_data['convex_hull']], -1, COLOR_CYAN, 2)
             if belt_data.get('min_area_rect') is not None:
@@ -213,20 +211,15 @@ class BeltUtils:
                 except Exception:
                     pass
 
-            # Draw edges overlay but only on belt mask to avoid background structure
             edges = belt_data.get('edges')
             mask = belt_data.get('belt_mask')
             if edges is not None and mask is not None and edges.shape == mask.shape:
-                # color edges in red where edges and belt_mask overlap
                 edges_mask = np.logical_and(edges > 0, mask > 0)
-                # draw red pixels (use circle for visibility)
                 ys, xs = np.where(edges_mask)
-                # draw a limited number for performance
                 for x, y in zip(xs[:1000], ys[:1000]):
                     if 0 <= x < w and 0 <= y < h:
                         vis[y, x] = COLOR_RED
 
-            # Draw left/right edges if present (polylines)
             left_edge = belt_data.get('left_edge') or []
             right_edge = belt_data.get('right_edge') or []
             if len(left_edge) > 2:
@@ -236,13 +229,11 @@ class BeltUtils:
                 pts = np.array(right_edge).reshape(-1, 1, 2).astype(np.int32)
                 cv2.polylines(vis, [pts], isClosed=False, color=COLOR_CYAN, thickness=3)
 
-            # Draw damaged points if any
             damaged = belt_data.get('damaged_points') or []
             for (x, y) in damaged:
                 if 0 <= x < w and 0 <= y < h:
                     cv2.circle(vis, (x, y), 4, COLOR_RED, -1)
 
-            # Centroid and area info
             if contour is not None:
                 try:
                     M = cv2.moments(contour)
@@ -254,15 +245,15 @@ class BeltUtils:
                 except Exception:
                     pass
 
-            # Draw centerline and alignment arrow
             frame_center = belt_data.get('frame_center', w // 2)
             cv2.line(vis, (frame_center, 0), (frame_center, h), (200, 200, 200), 1)
             deviation = int(belt_data.get('alignment_deviation', 0))
             arrow_y = h - 40
             color_align = COLOR_ORANGE if abs(deviation) > 30 else COLOR_GREEN
-            cv2.arrowedLine(vis, (frame_center, arrow_y), (frame_center + deviation, arrow_y), color_align, 3, tipLength=0.05)
+            cv2.arrowedLine(vis, (frame_center, arrow_y), (frame_center + deviation, arrow_y), color_align, 3,
+                            tipLength=0.05)
 
-            # Overlay metrics (speed, area, alignment)
+            # Metrics text overlay with dark background
             y0 = 20
             dy = 22
             metrics_lines = [
@@ -274,21 +265,29 @@ class BeltUtils:
                 f"Contour pts: {belt_data.get('contour_points', 0)}",
                 f"Damaged pts: {len(damaged)}"
             ]
+
+            # Dark rectangle
+            rect_height = len(metrics_lines) * dy + 10
+            cv2.rectangle(vis, (5, 5), (320, 5 + rect_height), (0, 0, 0), -1)  # filled dark rectangle
+            overlay_alpha = 0.6
+            vis[5:5 + rect_height, 5:320] = cv2.addWeighted(vis[5:5 + rect_height, 5:320], overlay_alpha,
+                                                            np.zeros_like(vis[5:5 + rect_height, 5:320]), 0, 0)
+
             for i, line in enumerate(metrics_lines):
                 cv2.putText(vis, line, (10, y0 + i * dy), cv2.FONT_HERSHEY_SIMPLEX, 0.55, COLOR_WHITE, 1, cv2.LINE_AA)
 
             # Warnings
             wy = y0 + len(metrics_lines) * dy + 8
             if abs(deviation) > 50:
-                cv2.putText(vis, "⚠ MISALIGNMENT", (10, wy), cv2.FONT_HERSHEY_SIMPLEX, 0.7, COLOR_ORANGE, 2, cv2.LINE_AA)
+                cv2.putText(vis, "⚠ MISALIGNMENT", (10, wy), cv2.FONT_HERSHEY_SIMPLEX, 0.7, COLOR_ORANGE, 2,
+                            cv2.LINE_AA)
                 wy += 28
-            # edge damage heuristic: compare contour area to hull
             try:
                 hull_area = float(belt_data.get('convex_hull_area', 0.0)) or 0.0
                 contour_area = float(belt_data.get('belt_area_pixels', 0.0)) or 0.0
                 if hull_area > 0 and contour_area / hull_area < 0.8:
-                    cv2.putText(vis, "⚠ EDGE DAMAGE SUSPECTED", (10, wy), cv2.FONT_HERSHEY_SIMPLEX, 0.7, COLOR_RED, 2, cv2.LINE_AA)
-                    wy += 28
+                    cv2.putText(vis, "⚠ EDGE DAMAGE SUSPECTED", (10, wy), cv2.FONT_HERSHEY_SIMPLEX, 0.7, COLOR_RED, 2,
+                                cv2.LINE_AA)
             except Exception:
                 pass
 
