@@ -1,9 +1,7 @@
-# vision/services/belt_utils.py
 import cv2
 import numpy as np
 import logging
 import math
-import json
 
 logger = logging.getLogger(__name__)
 
@@ -38,323 +36,264 @@ class BeltUtils:
             except:
                 return None
 
-    def calculate_speed_fast(self, prev_frame, curr_frame, prev_belt_data, curr_belt_data, fps):
-        """Calculate belt speed using optical flow safely"""
+    def calculate_speed_fast(self, prev_frame_gray, curr_frame_gray, prev_belt_data, curr_belt_data, fps):
+        """
+        Calculate belt speed using optical flow limited to the belt mask.
+        Returns speed in meters/second (m/s).
+        Inputs prev_frame_gray and curr_frame_gray must be grayscale images (same dims).
+        prev_belt_data and curr_belt_data should contain 'belt_mask' (full-frame uint8 mask)
+        and optionally calibrated 'belt_physical_width_mm' / 'belt_width' for pixel->meter mapping.
+        """
         try:
-            if not prev_belt_data['belt_found'] or not curr_belt_data['belt_found']:
+            # Basic checks
+            if prev_belt_data is None or curr_belt_data is None:
+                return 0.0
+            if not prev_belt_data.get('belt_found') or not curr_belt_data.get('belt_found'):
+                return 0.0
+            if prev_frame_gray is None or curr_frame_gray is None:
                 return 0.0
 
-            height, width = prev_frame.shape[:2]
+            # Ensure masks exist and match frames
+            height, width = prev_frame_gray.shape[:2]
 
-            # Convert frames to grayscale
-            prev_gray = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
-            curr_gray = cv2.cvtColor(curr_frame, cv2.COLOR_BGR2GRAY)
+            def safe_mask(mask):
+                if mask is None:
+                    return np.zeros((height, width), dtype=np.uint8)
+                if isinstance(mask, np.ndarray):
+                    m = mask.astype(np.uint8)
+                    if m.shape != (height, width):
+                        try:
+                            m = cv2.resize(m, (width, height), interpolation=cv2.INTER_NEAREST)
+                        except Exception:
+                            m = np.zeros((height, width), dtype=np.uint8)
+                    # Ensure binary 0/255
+                    m = (m > 0).astype(np.uint8) * 255
+                    return m
+                return np.zeros((height, width), dtype=np.uint8)
 
-            # Debug: Check frame sizes
-            logger.debug(f"Frame sizes - Prev: {prev_gray.shape}, Curr: {curr_gray.shape}")
+            prev_mask = safe_mask(prev_belt_data.get('belt_mask'))
+            curr_mask = safe_mask(curr_belt_data.get('belt_mask'))
 
-            # Safe mask creation function
-            def create_safe_mask(mask_data, ref_height, ref_width):
-                """Create a safe mask that matches reference dimensions"""
-                if mask_data is None:
-                    return np.zeros((ref_height, ref_width), dtype=np.uint8)
-
-                # If mask is a numpy array
-                if isinstance(mask_data, np.ndarray):
-                    mask = mask_data.astype(np.uint8)
-
-                    # Check if mask needs resizing
-                    if mask.shape != (ref_height, ref_width):
-                        logger.debug(f"Resizing mask from {mask.shape} to {(ref_height, ref_width)}")
-                        mask = cv2.resize(mask, (ref_width, ref_height),
-                                          interpolation=cv2.INTER_NEAREST)
-                        mask = (mask > 0).astype(np.uint8) * 255
-
-                    return mask
-
-                # If mask is a list or other type
-                return np.zeros((ref_height, ref_width), dtype=np.uint8)
-
-            # Create masks that match frame dimensions
-            prev_mask = create_safe_mask(prev_belt_data.get('belt_mask'), height, width)
-            curr_mask = create_safe_mask(curr_belt_data.get('belt_mask'), height, width)
-
-            # Debug: Check mask sizes
-            logger.debug(f"Mask sizes - Prev: {prev_mask.shape}, Curr: {curr_mask.shape}")
-
-            # Verify mask dimensions match frame dimensions
-            if prev_gray.shape != prev_mask.shape:
-                logger.error(f"Mask shape mismatch: gray={prev_gray.shape}, mask={prev_mask.shape}")
-                # Create proper mask
-                prev_mask = np.zeros_like(prev_gray, dtype=np.uint8)
-
-            if curr_gray.shape != curr_mask.shape:
-                logger.error(f"Mask shape mismatch: gray={curr_gray.shape}, mask={curr_mask.shape}")
-                # Create proper mask
-                curr_mask = np.zeros_like(curr_gray, dtype=np.uint8)
-
-            # Apply masks using bitwise operations
+            # Apply masks
             try:
-                prev_gray_masked = cv2.bitwise_and(prev_gray, prev_gray, mask=prev_mask)
-                curr_gray_masked = cv2.bitwise_and(curr_gray, curr_gray, mask=curr_mask)
-            except Exception as mask_error:
-                logger.error(f"Error applying masks: {mask_error}")
-                # Fallback: use unmasked frames
-                prev_gray_masked = prev_gray.copy()
-                curr_gray_masked = curr_gray.copy()
+                prev_masked = cv2.bitwise_and(prev_frame_gray, prev_frame_gray, mask=prev_mask)
+                curr_masked = cv2.bitwise_and(curr_frame_gray, curr_frame_gray, mask=curr_mask)
+            except Exception as e:
+                logger.error(f"Mask application error: {e}")
+                prev_masked = prev_frame_gray.copy()
+                curr_masked = curr_frame_gray.copy()
 
-            # Check if we have enough non-zero pixels to compute optical flow
-            non_zero_pixels = np.count_nonzero(prev_mask)
-            if non_zero_pixels < 100:  # Too few pixels to compute reliable flow
-                logger.debug(f"Insufficient mask pixels: {non_zero_pixels}")
+            # Check enough pixels
+            non_zero = np.count_nonzero(prev_mask)
+            if non_zero < 50:
                 return 0.0
 
-            # Compute optical flow with error handling
+            # Optical flow (Farneback)
             try:
-                flow = cv2.calcOpticalFlowFarneback(
-                    prev_gray_masked, curr_gray_masked, None,
-                    pyr_scale=0.5,
-                    levels=3,
-                    winsize=15,
-                    iterations=3,
-                    poly_n=5,
-                    poly_sigma=1.2,
-                    flags=0
-                )
-            except Exception as flow_error:
-                logger.error(f"Error computing optical flow: {flow_error}")
+                flow = cv2.calcOpticalFlowFarneback(prev_masked, curr_masked, None,
+                                                    pyr_scale=0.5, levels=3, winsize=15,
+                                                    iterations=3, poly_n=5, poly_sigma=1.2, flags=0)
+            except Exception as e:
+                logger.error(f"Optical flow error: {e}")
                 return 0.0
 
             if flow is None:
-                logger.error("Optical flow computation returned None")
                 return 0.0
 
-            # Extract horizontal flow component
             flow_x = flow[..., 0]
 
-            # Only consider pixels within the mask
-            mask_indices = np.where(prev_mask > 0)
-
-            if len(mask_indices[0]) == 0:
-                logger.debug("No valid mask pixels for flow calculation")
+            # Only use flow where prev_mask > 0
+            mask_idx = prev_mask > 0
+            if np.count_nonzero(mask_idx) == 0:
                 return 0.0
 
-            movements = flow_x[mask_indices]
+            movements = flow_x[mask_idx]
 
-            # Filter out very small movements (noise)
-            movement_threshold = 0.1
-            valid_movements = movements[np.abs(movements) > movement_threshold]
-
-            if len(valid_movements) == 0:
+            # Filter tiny movements (noise)
+            movement_threshold = 0.05
+            valid = movements[np.abs(movements) > movement_threshold]
+            if valid.size == 0:
                 return 0.0
 
-            # Calculate average movement
-            avg_movement = float(np.mean(valid_movements))
+            avg_px_per_frame = float(np.mean(valid))
 
-            # Convert pixels to meters
-            pixel_to_meter = 0.001  # Default
-
-            # Try to use physical calibration if available
-            if curr_belt_data.get('belt_physical_width_mm') and curr_belt_data.get('belt_width'):
-                try:
-                    physical_width_mm = float(curr_belt_data['belt_physical_width_mm'])
+            # Convert pixels/frame -> meters/sec
+            # Determine pixel_to_meter from calibration if available, otherwise default guess:
+            pixel_to_meter = 0.001  # default meters per pixel (1 mm per px)
+            try:
+                if curr_belt_data.get('belt_physical_width_mm') and curr_belt_data.get('belt_width'):
+                    physical_mm = float(curr_belt_data['belt_physical_width_mm'])
                     pixel_width = float(curr_belt_data['belt_width'])
-
                     if pixel_width > 0:
-                        pixel_to_meter = (physical_width_mm / 1000.0) / pixel_width
-                        logger.debug(f"Using calibrated pixel_to_meter: {pixel_to_meter}")
-                except Exception as calib_error:
-                    logger.error(f"Error in calibration conversion: {calib_error}")
+                        pixel_to_meter = (physical_mm / 1000.0) / pixel_width
+                elif curr_belt_data.get('belt_height') and curr_belt_data.get('belt_physical_height_mm'):
+                    physical_mm = float(curr_belt_data['belt_physical_height_mm'])
+                    pixel_height = float(curr_belt_data['belt_height'])
+                    if pixel_height > 0:
+                        pixel_to_meter = (physical_mm / 1000.0) / pixel_height
+            except Exception as e:
+                logger.debug(f"Calibration parse error: {e}")
 
-            # Calculate speed
-            speed_m_per_sec = abs(avg_movement) * float(fps) * pixel_to_meter
-            speed_m_per_min = speed_m_per_sec * 60.0
+            # pixels/frame * fps = pixels/sec -> * pixel_to_meter = meters/sec
+            speed_m_s = abs(avg_px_per_frame) * float(fps) * pixel_to_meter
 
-            logger.debug(f"Speed calculation: movement={avg_movement:.3f}px, "
-                         f"fps={fps}, conversion={pixel_to_meter:.6f}, "
-                         f"result={speed_m_per_min:.2f} m/min")
-
-            return float(speed_m_per_min)
+            logger.debug(f"Optical flow avg_px/frame={avg_px_per_frame:.4f}, fps={fps}, px->m={pixel_to_meter:.6f}, speed_m/s={speed_m_s:.4f}")
+            return float(speed_m_s)
 
         except Exception as e:
-            logger.error(f"Error calculating speed: {e}", exc_info=True)
+            logger.exception(f"Error calculating speed: {e}")
             return 0.0
+
+    def calculate_speed_kmh(self, prev_frame_gray, curr_frame_gray, prev_belt_data, curr_belt_data, fps, calibration_data=None):
+        """Wrapper returning km/h"""
+        try:
+            speed_m_s = self.calculate_speed_fast(prev_frame_gray, curr_frame_gray, prev_belt_data, curr_belt_data, fps)
+            return float(speed_m_s * 3.6)
+        except Exception as e:
+            logger.error(f"Error calculating speed_kmh: {e}")
+            return 0.0
+
     def calculate_vibration_from_area(self, area_history):
         """Calculate vibration from area variations"""
         try:
             if len(area_history) < 5:
-                return {
-                    'amplitude': 0.0,
-                    'frequency': 0.0,
-                    'severity': 'Low'
-                }
-
-            recent_areas = area_history[-20:] if len(area_history) >= 20 else area_history
-
-            if len(recent_areas) > 1:
-                mean_area = float(np.mean(recent_areas))
-                if mean_area > 0:
-                    normalized_areas = [(float(a) - mean_area) / mean_area for a in recent_areas]
-                    amplitude = float(np.std(normalized_areas)) * 100.0
-                else:
-                    amplitude = 0.0
-            else:
-                amplitude = 0.0
-
+                return {'amplitude': 0.0, 'frequency': 0.0, 'severity': 'Low'}
+            recent = area_history[-20:] if len(area_history) >= 20 else area_history
+            mean_area = float(np.mean(recent))
+            amplitude = float(np.std([(a - mean_area) / mean_area for a in recent])) * 100.0 if mean_area > 0 else 0.0
             if amplitude < 5.0:
                 severity = 'Low'
             elif amplitude < 15.0:
                 severity = 'Medium'
             else:
                 severity = 'High'
-
-            return {
-                'amplitude': float(amplitude),
-                'frequency': 0.0,
-                'severity': str(severity)
-            }
-
+            return {'amplitude': float(amplitude), 'frequency': 0.0, 'severity': severity}
         except Exception as e:
             logger.error(f"Error calculating vibration from area: {e}")
-            return {
-                'amplitude': 0.0,
-                'frequency': 0.0,
-                'severity': 'Low'
-            }
-
-
-    class BeltUtils:
-        # existing methods ...
-
-        def calculate_speed_kmh(self, prev_frame, curr_frame, prev_belt, curr_belt, fps, calibration_data=None):
-            """
-            Calculate belt speed in km/h.
-            - prev_frame, curr_frame: frames
-            - prev_belt, curr_belt: belt detection info
-            - fps: frames per second
-            - calibration_data: dict with 'pixels_per_mm'
-            """
-            try:
-                speed_px = self.calculate_speed_fast(prev_frame, curr_frame, prev_belt, curr_belt,
-                                                     fps)  # pixels per frame
-                if calibration_data and calibration_data.get('pixels_per_mm'):
-                    pixels_per_mm = float(calibration_data['pixels_per_mm'])
-                else:
-                    pixels_per_mm = 1.0  # fallback if calibration not set
-
-                # Convert pixels → meters
-                meters_per_frame = (speed_px / pixels_per_mm) / 1000.0  # mm → m
-                speed_m_s = meters_per_frame * fps
-                speed_kmh = speed_m_s * 3.6  # m/s → km/h
-                return float(speed_kmh)
-            except Exception as e:
-                logger.error(f"Error calculating speed in km/h: {e}")
-                return 0.0
+            return {'amplitude': 0.0, 'frequency': 0.0, 'severity': 'Low'}
 
     def draw_enhanced_visualizations(self, frame, belt_data, metrics):
-        """Draw enhanced visualizations with area measurement and speed display"""
-        vis_frame = frame.copy()
-        height, width = frame.shape[:2]
+        """Draw robust visualizations on the provided BGR frame."""
+        try:
+            vis = frame.copy()
+            h, w = vis.shape[:2]
 
-        # Colors
-        COLOR_BLUE = (255, 0, 0)
-        COLOR_GREEN = (0, 255, 0)
-        COLOR_YELLOW = (0, 255, 255)
-        COLOR_RED = (0, 0, 255)
-        COLOR_MAGENTA = (255, 0, 255)
-        COLOR_CYAN = (255, 255, 0)
-        COLOR_ORANGE = (0, 165, 255)
-        COLOR_WHITE = (255, 255, 255)
+            # Colors
+            COLOR_GREEN = (0, 255, 0)
+            COLOR_RED = (0, 0, 255)
+            COLOR_BLUE = (255, 0, 0)
+            COLOR_CYAN = (255, 255, 0)
+            COLOR_YELLOW = (0, 255, 255)
+            COLOR_ORANGE = (0, 165, 255)
+            COLOR_WHITE = (255, 255, 255)
+            COLOR_BG = (0, 0, 0)
 
-        # No belt detected
-        if not belt_data['belt_found']:
-            cv2.putText(vis_frame, "NO BELT DETECTED",
-                        (width // 2 - 120, height // 2),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, COLOR_RED, 2)
-            return vis_frame
+            # If no belt, show message
+            if not belt_data.get('belt_found', False):
+                cv2.putText(vis, "NO BELT DETECTED", (w // 2 - 150, h // 2),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1.0, COLOR_RED, 2, cv2.LINE_AA)
+                return vis
 
-        # Draw belt contour, convex hull, min area rect
-        if belt_data.get('contour') is not None:
-            contour = belt_data['contour']
-            overlay = vis_frame.copy()
-            cv2.drawContours(overlay, [contour], -1, (0, 100, 255), -1)
-            cv2.addWeighted(overlay, 0.3, vis_frame, 0.7, 0, vis_frame)
-            cv2.drawContours(vis_frame, [contour], -1, COLOR_YELLOW, 2)
-            for point in contour[::10]:
-                x, y = point[0]
-                cv2.circle(vis_frame, (x, y), 2, COLOR_BLUE, -1)
+            # Draw full contour (if present)
+            contour = belt_data.get('contour')
+            if contour is not None and len(contour) > 2:
+                try:
+                    cv2.drawContours(vis, [contour], -1, COLOR_GREEN, 2)
+                except Exception:
+                    # contour might be in unexpected dtype/shape — safe conversion
+                    cnt = np.array(contour, dtype=np.int32).reshape(-1, 1, 2)
+                    cv2.drawContours(vis, [cnt], -1, COLOR_GREEN, 2)
+
+            # Draw convex hull and min area rect if available
             if belt_data.get('convex_hull') is not None:
-                cv2.drawContours(vis_frame, [belt_data['convex_hull']], -1, COLOR_MAGENTA, 2)
+                cv2.drawContours(vis, [belt_data['convex_hull']], -1, COLOR_CYAN, 2)
             if belt_data.get('min_area_rect') is not None:
-                cv2.drawContours(vis_frame, [belt_data['min_area_rect']], -1, COLOR_GREEN, 2)
-                rect_center = tuple(np.mean(belt_data['min_area_rect'], axis=0).astype(int))
-                cv2.putText(vis_frame, "Min Area Rect",
-                            (rect_center[0] - 50, rect_center[1] - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLOR_GREEN, 1)
+                try:
+                    cv2.drawContours(vis, [belt_data['min_area_rect']], -1, COLOR_BLUE, 2)
+                except Exception:
+                    pass
 
-        # Draw edges
-        if belt_data.get('edges') is not None:
-            edges = belt_data['edges']
-            y_indices, x_indices = np.where(edges > 0)
-            for x, y in zip(x_indices[:300], y_indices[:300]):
-                cv2.circle(vis_frame, (x, y), 1, COLOR_GREEN, -1)
+            # Draw edges overlay but only on belt mask to avoid background structure
+            edges = belt_data.get('edges')
+            mask = belt_data.get('belt_mask')
+            if edges is not None and mask is not None and edges.shape == mask.shape:
+                # color edges in red where edges and belt_mask overlap
+                edges_mask = np.logical_and(edges > 0, mask > 0)
+                # draw red pixels (use circle for visibility)
+                ys, xs = np.where(edges_mask)
+                # draw a limited number for performance
+                for x, y in zip(xs[:1000], ys[:1000]):
+                    if 0 <= x < w and 0 <= y < h:
+                        vis[y, x] = COLOR_RED
 
-        # Draw corners
-        if belt_data.get('corners') is not None:
-            for corner in belt_data['corners']:
-                if len(corner) == 2:
-                    x, y = corner
-                    cv2.circle(vis_frame, (x, y), 6, COLOR_RED, -1)
+            # Draw left/right edges if present (polylines)
+            left_edge = belt_data.get('left_edge') or []
+            right_edge = belt_data.get('right_edge') or []
+            if len(left_edge) > 2:
+                pts = np.array(left_edge).reshape(-1, 1, 2).astype(np.int32)
+                cv2.polylines(vis, [pts], isClosed=False, color=COLOR_BLUE, thickness=3)
+            if len(right_edge) > 2:
+                pts = np.array(right_edge).reshape(-1, 1, 2).astype(np.int32)
+                cv2.polylines(vis, [pts], isClosed=False, color=COLOR_CYAN, thickness=3)
 
-        # Centroid and area info
-        if belt_data['belt_found'] and belt_data.get('contour') is not None:
-            M = cv2.moments(belt_data['contour'])
-            if M['m00'] != 0:
-                centroid_x = int(M['m10'] / M['m00'])
-                centroid_y = int(M['m01'] / M['m00'])
-                cv2.circle(vis_frame, (centroid_x, centroid_y), 8, COLOR_CYAN, -1)
-                cv2.circle(vis_frame, (centroid_x, centroid_y), 10, COLOR_CYAN, 2)
+            # Draw damaged points if any
+            damaged = belt_data.get('damaged_points') or []
+            for (x, y) in damaged:
+                if 0 <= x < w and 0 <= y < h:
+                    cv2.circle(vis, (x, y), 4, COLOR_RED, -1)
 
-                area_text = f"Area: {belt_data['belt_area_pixels']:.0f} px²"
-                if belt_data.get('belt_area_mm2'):
-                    area_text += f"\n{belt_data['belt_area_mm2']:.0f} mm²"
+            # Centroid and area info
+            if contour is not None:
+                try:
+                    M = cv2.moments(contour)
+                    if M.get('m00', 0) != 0:
+                        cx = int(M['m10'] / M['m00'])
+                        cy = int(M['m01'] / M['m00'])
+                        cv2.circle(vis, (cx, cy), 6, COLOR_YELLOW, -1)
+                        cv2.circle(vis, (cx, cy), 8, COLOR_YELLOW, 2)
+                except Exception:
+                    pass
 
-                text_size = cv2.getTextSize(area_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0]
-                cv2.rectangle(vis_frame,
-                              (centroid_x - text_size[0] // 2 - 5, centroid_y + 20 - text_size[1] - 5),
-                              (centroid_x + text_size[0] // 2 + 5, centroid_y + 20 + 5),
-                              (0, 0, 0), -1)
-                cv2.putText(vis_frame, area_text,
-                            (centroid_x - text_size[0] // 2, centroid_y + 20),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLOR_WHITE, 1)
+            # Draw centerline and alignment arrow
+            frame_center = belt_data.get('frame_center', w // 2)
+            cv2.line(vis, (frame_center, 0), (frame_center, h), (200, 200, 200), 1)
+            deviation = int(belt_data.get('alignment_deviation', 0))
+            arrow_y = h - 40
+            color_align = COLOR_ORANGE if abs(deviation) > 30 else COLOR_GREEN
+            cv2.arrowedLine(vis, (frame_center, arrow_y), (frame_center + deviation, arrow_y), color_align, 3, tipLength=0.05)
 
-        # Frame center and alignment arrow
-        frame_center = belt_data.get('frame_center', width // 2)
-        cv2.line(vis_frame, (frame_center, 0), (frame_center, height), (200, 200, 200), 2)
-        deviation = belt_data.get('alignment_deviation', 0)
-        arrow_y = height - 50
-        alignment_color = COLOR_ORANGE if abs(deviation) > 20 else COLOR_GREEN
-        cv2.arrowedLine(vis_frame, (frame_center, arrow_y),
-                        (frame_center + deviation, arrow_y), alignment_color, 3, tipLength=0.05)
+            # Overlay metrics (speed, area, alignment)
+            y0 = 20
+            dy = 22
+            metrics_lines = [
+                f"Speed: {metrics.get('speed', 0.0):.2f} km/h",
+                f"Avg Speed: {metrics.get('avg_speed', 0.0):.2f} km/h",
+                f"Alignment: {deviation} px",
+                f"Area: {belt_data.get('belt_area_pixels', 0):.0f} px",
+                f"Edges (pts): {belt_data.get('edge_points', 0)}",
+                f"Contour pts: {belt_data.get('contour_points', 0)}",
+                f"Damaged pts: {len(damaged)}"
+            ]
+            for i, line in enumerate(metrics_lines):
+                cv2.putText(vis, line, (10, y0 + i * dy), cv2.FONT_HERSHEY_SIMPLEX, 0.55, COLOR_WHITE, 1, cv2.LINE_AA)
 
-        # Overlay belt speed in km/h
-        speed_text = f"Speed: {metrics.get('speed', 0.0):.1f} km/h"
-        cv2.putText(vis_frame, speed_text, (20, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, COLOR_GREEN, 2)
+            # Warnings
+            wy = y0 + len(metrics_lines) * dy + 8
+            if abs(deviation) > 50:
+                cv2.putText(vis, "⚠ MISALIGNMENT", (10, wy), cv2.FONT_HERSHEY_SIMPLEX, 0.7, COLOR_ORANGE, 2, cv2.LINE_AA)
+                wy += 28
+            # edge damage heuristic: compare contour area to hull
+            try:
+                hull_area = float(belt_data.get('convex_hull_area', 0.0)) or 0.0
+                contour_area = float(belt_data.get('belt_area_pixels', 0.0)) or 0.0
+                if hull_area > 0 and contour_area / hull_area < 0.8:
+                    cv2.putText(vis, "⚠ EDGE DAMAGE SUSPECTED", (10, wy), cv2.FONT_HERSHEY_SIMPLEX, 0.7, COLOR_RED, 2, cv2.LINE_AA)
+                    wy += 28
+            except Exception:
+                pass
 
-        # Warnings
-        warning_y = 60
-        if abs(deviation) > 50:
-            cv2.putText(vis_frame, "⚠ MISALIGNMENT",
-                        (20, warning_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, COLOR_ORANGE, 2)
-            warning_y += 30
+            return vis
 
-        area_px = belt_data.get('belt_area_pixels', 0)
-        if area_px > 0:
-            expected_area_ratio = area_px / (height * width)
-            if expected_area_ratio < 0.1:
-                cv2.putText(vis_frame, "⚠ SMALL BELT AREA",
-                            (20, warning_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, COLOR_ORANGE, 2)
-
-        return vis_frame
-
+        except Exception as e:
+            logger.exception(f"Error drawing visualizations: {e}")
+            return frame

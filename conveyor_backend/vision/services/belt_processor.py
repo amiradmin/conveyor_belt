@@ -120,8 +120,14 @@ class BeltProcessor:
             logger.error(f"Error starting job {job_id}: {e}")
             raise
 
+
+
+
+
+
+
     def _process_video_stream(self, job_id, video_path):
-        """Main video processing thread with area detection and speed in km/h"""
+        """Main video processing thread with area detection, edges, and speed (km/h)"""
         channel_layer = get_channel_layer()
 
         try:
@@ -148,7 +154,7 @@ class BeltProcessor:
                 })
 
             frame_no = 0
-            prev_frame = None
+            prev_frame_gray = None
             prev_belt_data = None
             prev_time = time.time()
             fps_start_time = time.time()
@@ -183,22 +189,73 @@ class BeltProcessor:
                 if sleep_time > 0:
                     time.sleep(sleep_time)
 
+                # Detect belt
                 belt_data = self.detector.detect_belt_with_details(frame)
 
-                # Calculate speed in km/h
-                if prev_frame is not None and prev_belt_data is not None and belt_data['belt_found']:
-                    speed_m_per_s = self.utils.calculate_speed_fast(
-                        prev_frame, frame, prev_belt_data, belt_data, target_fps
-                    )
-                    speed_kmh = float(speed_m_per_s) * 3.6
+                # Grayscale for motion filtering and optical flow
+                frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+                # Motion filtering to remove static structures (use previous gray)
+                if prev_frame_gray is not None and belt_data.get('belt_found', False):
+                    frame_diff = cv2.absdiff(frame_gray, prev_frame_gray)
+                    _, motion_mask = cv2.threshold(frame_diff, 25, 255, cv2.THRESH_BINARY)
+                    motion_mask = cv2.morphologyEx(motion_mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+
+                    # Keep only contour points that moved
+                    moving_points = []
+                    if belt_data.get('contour') is not None:
+                        cnt_pts = belt_data['contour'].reshape(-1, 2)
+                        for (x, y) in cnt_pts:
+                            x_i, y_i = int(x), int(y)
+                            if 0 <= y_i < motion_mask.shape[0] and 0 <= x_i < motion_mask.shape[1]:
+                                if motion_mask[y_i, x_i] > 0:
+                                    moving_points.append([[x_i, y_i]])
+
+                    if len(moving_points) > 3:
+                        belt_data['contour'] = np.array(moving_points, dtype=np.int32)
+                        belt_data['belt_area_pixels'] = float(cv2.contourArea(belt_data['contour']))
+                        # rebuild mask
+                        mask_full = np.zeros((frame_height, frame_width), dtype=np.uint8)
+                        cv2.drawContours(mask_full, [belt_data['contour']], -1, 255, -1)
+                        belt_data['belt_mask'] = mask_full
+                    else:
+                        belt_data['belt_found'] = False
+                        belt_data['belt_area_pixels'] = 0.0
+                        belt_data['belt_mask'] = np.zeros((frame_height, frame_width), dtype=np.uint8)
+
+                # If we have a contour, extract left/right edges and damaged points
+                if belt_data.get('belt_found') and belt_data.get('contour') is not None:
+                    contour_pts = belt_data['contour'].reshape(-1, 2)
+                    # Sort by x to split left/right edges
+                    sorted_by_x = contour_pts[np.argsort(contour_pts[:, 0])]
+                    half = max(2, len(sorted_by_x) // 2)
+                    left_edge_pts = sorted_by_x[:half].tolist()
+                    right_edge_pts = sorted_by_x[half:].tolist()
+                    belt_data['left_edge'] = left_edge_pts
+                    belt_data['right_edge'] = right_edge_pts
+
+                    # Simple damaged detection: points with large vertical deviation from mean
+                    y_mean = float(np.mean(contour_pts[:, 1]))
+                    damaged = []
+                    for x_p, y_p in contour_pts:
+                        if abs(float(y_p) - y_mean) > 20:  # tunable threshold
+                            damaged.append([int(x_p), int(y_p)])
+                    belt_data['damaged_points'] = damaged
+                else:
+                    belt_data['left_edge'] = []
+                    belt_data['right_edge'] = []
+                    belt_data['damaged_points'] = []
+
+                # Speed calculation (m/s -> km/h)
+                if prev_frame_gray is not None and prev_belt_data is not None and belt_data.get('belt_found', False):
+                    speed_kmh = self.utils.calculate_speed_kmh(prev_frame_gray, frame_gray, prev_belt_data, belt_data, target_fps)
                 else:
                     speed_kmh = 0.0
 
-                if belt_data['belt_found']:
-                    speed_history.append(speed_kmh)
-                    alignment_history.append(float(abs(belt_data['alignment_deviation'])))
-                    area_history.append(float(belt_data['belt_area_pixels']))
-
+                if belt_data.get('belt_found', False):
+                    speed_history.append(float(speed_kmh))
+                    alignment_history.append(float(abs(belt_data.get('alignment_deviation', 0))))
+                    area_history.append(float(belt_data.get('belt_area_pixels', 0)))
                     if len(speed_history) > 50:
                         speed_history = speed_history[-50:]
                     if len(alignment_history) > 50:
@@ -206,23 +263,23 @@ class BeltProcessor:
                     if len(area_history) > 50:
                         area_history = area_history[-50:]
 
-                avg_speed = float(np.mean(speed_history).item()) if speed_history else 0.0
-                avg_alignment = float(np.mean(alignment_history).item()) if alignment_history else 0.0
-                avg_area = float(np.mean(area_history).item()) if area_history else 0.0
+                avg_speed = float(np.mean(speed_history)) if speed_history else 0.0
+                avg_alignment = float(np.mean(alignment_history)) if alignment_history else 0.0
+                avg_area = float(np.mean(area_history)) if area_history else 0.0
 
                 metrics = {
                     'speed': float(speed_kmh),
                     'avg_speed': float(avg_speed),
-                    'alignment_deviation': int(belt_data['alignment_deviation']),
+                    'alignment_deviation': int(belt_data.get('alignment_deviation', 0)),
                     'avg_alignment': float(avg_alignment),
-                    'vibration_amplitude': 0.2,
-                    'vibration_frequency': 0.2,
-                    'vibration_severity': "High",
-                    'belt_width': float(belt_data['belt_width']),
-                    'belt_height': float(belt_data['belt_height']),
-                    'belt_found': bool(belt_data['belt_found']),
+                    'vibration_amplitude': 0.0,
+                    'vibration_frequency': 0.0,
+                    'vibration_severity': "Low",
+                    'belt_width': float(belt_data.get('belt_width', 0)),
+                    'belt_height': float(belt_data.get('belt_height', 0)),
+                    'belt_found': bool(belt_data.get('belt_found', False)),
                     'frame_number': int(frame_no),
-                    'belt_area_pixels': float(belt_data['belt_area_pixels']),
+                    'belt_area_pixels': float(belt_data.get('belt_area_pixels', 0)),
                     'belt_area_mm2': float(belt_data.get('belt_area_mm2')) if belt_data.get('belt_area_mm2') else None,
                     'avg_belt_area': float(avg_area),
                     'contour_points': int(belt_data.get('contour_points', 0)),
@@ -234,12 +291,11 @@ class BeltProcessor:
                     'extent': float(belt_data.get('extent', 0))
                 }
 
-                # Draw frame with speed
+                # Draw annotated frame
                 annotated_frame = self.utils.draw_enhanced_visualizations(frame, belt_data, metrics)
 
-                _, buffer = cv2.imencode('.jpg', annotated_frame, [
-                    int(cv2.IMWRITE_JPEG_QUALITY), 85
-                ])
+                # Encode frame for WebSocket
+                _, buffer = cv2.imencode('.jpg', annotated_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
                 frame_base64 = base64.b64encode(buffer).decode('utf-8')
 
                 progress = int((frame_no / total_frames) * 100) if total_frames > 0 else 0
@@ -251,7 +307,7 @@ class BeltProcessor:
                         replay_buffer['frames'].append(frame_base64)
                         replay_buffer['timestamps'].append(float(current_time))
                         replay_buffer['speeds'].append(float(speed_kmh))
-                        replay_buffer['alignments'].append(float(belt_data['alignment_deviation']))
+                        replay_buffer['alignments'].append(float(belt_data.get('alignment_deviation', 0)))
 
                 # Send progress via WebSocket
                 message_data = {
@@ -272,7 +328,7 @@ class BeltProcessor:
                 except Exception as e:
                     logger.error(f"WebSocket send error: {e}")
 
-                # Update DB every 30 frames
+                # DB update every 30 frames
                 if frame_no % 30 == 0:
                     try:
                         ProcessingJob.objects.filter(job_id=job_id).update(
@@ -282,7 +338,7 @@ class BeltProcessor:
                     except Exception as e:
                         logger.error(f"Database update error: {e}")
 
-                prev_frame = frame.copy()
+                prev_frame_gray = frame_gray.copy()
                 prev_belt_data = belt_data
                 prev_time = time.time()
 
