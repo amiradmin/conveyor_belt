@@ -45,6 +45,7 @@ const AIProcessedFeedCard = ({
     frame_number: 0
   });
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isShow, setIsShow] = useState(false);
   const [jobId, setJobId] = useState(null);
   const [videos, setVideos] = useState([]);
   const [selectedVideo, setSelectedVideo] = useState("");
@@ -341,6 +342,11 @@ const AIProcessedFeedCard = ({
     }
   };
 
+  // Toggle show/hide controls
+  const toggleControls = () => {
+    setIsShow(!isShow);
+  };
+
   // Refresh videos list
   const handleRefreshVideos = async () => {
     await fetchVideos();
@@ -472,129 +478,150 @@ const AIProcessedFeedCard = ({
            streamingMode === 'video' ? 'VIDEO' :
            `REALTIME ${displayFPS || processingFPS}FPS`}
         </div>
+
+        {/* Toggle button for controls */}
+        <button
+          onClick={toggleControls}
+          style={{
+            position: 'absolute',
+            top: '15px',
+            right: '205px',
+            padding: '6px 12px',
+            backgroundColor: 'black',
+            color: 'black',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '12px',
+            fontWeight: 'bold'
+          }}
+        >
+          {isShow ? 'H' : 'S'}
+        </button>
       </div>
 
-      {/* Video selection and controls */}
-      <div className={styles.cameraControls} style={{ marginBottom: '10px' }}>
-        <div className={styles.videoSelection}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <label style={{ fontWeight: 'bold', fontSize: '14px' }}>Select Video to Process:</label>
-            <button
-              onClick={handleRefreshVideos}
-              disabled={isLoadingVideos}
-              style={{
-                padding: '4px 8px',
-                fontSize: '12px',
-                backgroundColor: '#f0f0f0',
-                border: '1px solid #ddd',
-                borderRadius: '3px',
-                cursor: 'pointer'
-              }}
-              title="Refresh video list"
-            >
-              {isLoadingVideos ? '↻' : '↻'}
-            </button>
-          </div>
-          <select
-            value={selectedVideo}
-            onChange={(e) => setSelectedVideo(e.target.value)}
-            disabled={isProcessing || isLoadingVideos}
-            style={{
-              width: '100%',
-              padding: '8px',
-              borderRadius: '4px',
-              border: '1px solid #ddd',
-              backgroundColor: isProcessing ? '#f5f5f5' : 'white'
-            }}
-          >
-            <option value="">-- Select a video --</option>
-            {videos.map(video => (
-              <option key={video.path} value={video.path}>
-                {video.filename || video.path} ({Math.round(video.size_mb || video.size / 1024)} {video.size_mb ? 'MB' : 'KB'})
-              </option>
-            ))}
-          </select>
-          {isLoadingVideos && (
-            <div style={{ fontSize: '12px', color: '#666', marginTop: '5px' }}>
-              Loading videos...
+      {isShow && (
+        <div className={styles.cameraControls} style={{ marginBottom: '10px' }}>
+          <div className={styles.videoSelection}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <label style={{ fontWeight: 'bold', fontSize: '14px' }}>Select Video to Process:</label>
+              <button
+                onClick={handleRefreshVideos}
+                disabled={isLoadingVideos}
+                style={{
+                  padding: '4px 8px',
+                  fontSize: '12px',
+                  backgroundColor: '#f0f0f0',
+                  border: '1px solid #ddd',
+                  borderRadius: '3px',
+                  cursor: 'pointer'
+                }}
+                title="Refresh video list"
+              >
+                {isLoadingVideos ? '↻' : '↻'}
+              </button>
             </div>
-          )}
-        </div>
-
-        <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-          <button
-            className={`${styles.actionBtn} ${styles.processBtn}`}
-            onClick={startProcessing}
-            disabled={!selectedVideo || isProcessing || isLoadingVideos}
-            style={{ flex: 1 }}
-          >
-            {isProcessing ? (
-              <>
-                <div className={styles.processingSpinner}></div>
-                Processing... {Math.round(displayProgress)}%
-              </>
-            ) : (
-              <>
-                <span>🎬</span>
-                Start Monitoring
-              </>
-            )}
-          </button>
-
-          {isProcessing && (
-            <button
-              onClick={stopProcessing}
+            <select
+              value={selectedVideo}
+              onChange={(e) => setSelectedVideo(e.target.value)}
+              disabled={isProcessing || isLoadingVideos}
               style={{
-                padding: '10px 15px',
-                backgroundColor: '#F44336',
-                color: 'white',
-                border: 'none',
+                width: '100%',
+                padding: '8px',
                 borderRadius: '4px',
-                cursor: 'pointer',
-                fontWeight: 'bold',
-                fontSize: '14px'
+                border: '1px solid #ddd',
+                backgroundColor: isProcessing ? '#f5f5f5' : 'white'
               }}
             >
-              ⏹️ Stop
-            </button>
-          )}
-        </div>
-
-        {/* Connection Status */}
-        <div style={{
-          marginTop: '10px',
-          padding: '8px',
-          backgroundColor: '#f8f9fa',
-          borderRadius: '4px',
-          fontSize: '12px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
-          <div>
-            <span style={{ fontWeight: 'bold' }}>Connection:</span>
-            <span style={{
-              marginLeft: '8px',
-              padding: '2px 8px',
-              backgroundColor: getConnectionStatusColor(),
-              color: 'white',
-              borderRadius: '3px',
-              fontSize: '11px'
-            }}>
-              {connectionStatus.toUpperCase()}
-            </span>
+              <option value="">-- Select a video --</option>
+              {videos.map(video => (
+                <option key={video.path} value={video.path}>
+                  {video.filename || video.path} ({Math.round(video.size_mb || video.size / 1024)} {video.size_mb ? 'MB' : 'KB'})
+                </option>
+              ))}
+            </select>
+            {isLoadingVideos && (
+              <div style={{ fontSize: '12px', color: '#666', marginTop: '5px' }}>
+                Loading videos...
+              </div>
+            )}
           </div>
 
-          {jobId && (
+          <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+            <button
+              className={`${styles.actionBtn} ${styles.processBtn}`}
+              onClick={startProcessing}
+              disabled={!selectedVideo || isProcessing || isLoadingVideos}
+              style={{ flex: 1 }}
+            >
+              {isProcessing ? (
+                <>
+                  <div className={styles.processingSpinner}></div>
+                  Processing... {Math.round(displayProgress)}%
+                </>
+              ) : (
+                <>
+                  <span>🎬</span>
+                  Start Monitoring
+                </>
+              )}
+            </button>
+
+            {isProcessing && (
+              <button
+                onClick={stopProcessing}
+                style={{
+                  padding: '10px 15px',
+                  backgroundColor: '#F44336',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  fontSize: '14px'
+                }}
+              >
+                ⏹️ Stop
+              </button>
+            )}
+          </div>
+
+          {/* Connection Status */}
+          <div style={{
+            marginTop: '10px',
+            padding: '8px',
+            backgroundColor: '#f8f9fa',
+            borderRadius: '4px',
+            fontSize: '12px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}>
             <div>
-              <span style={{ fontWeight: 'bold' }}>Job:</span>
-              <span style={{ marginLeft: '8px', fontFamily: 'monospace', fontSize: '11px' }}>
-                {jobId.substring(0, 8)}...
+              <span style={{ fontWeight: 'bold' }}>Connection:</span>
+              <span style={{
+                marginLeft: '8px',
+                padding: '2px 8px',
+                backgroundColor: getConnectionStatusColor(),
+                color: 'white',
+                borderRadius: '3px',
+                fontSize: '11px'
+              }}>
+                {connectionStatus.toUpperCase()}
               </span>
             </div>
-          )}
+
+            {jobId && (
+              <div>
+                <span style={{ fontWeight: 'bold' }}>Job:</span>
+                <span style={{ marginLeft: '8px', fontFamily: 'monospace', fontSize: '11px' }}>
+                  {jobId.substring(0, 8)}...
+                </span>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className={styles.videoContainer} ref={videoContainerRef}>
         {/* Video mode */}
