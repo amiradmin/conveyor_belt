@@ -41,7 +41,7 @@ const CameraFeedCard = ({
       <div className={styles.videoContainer}>
         <video
           ref={videoRef}
-          src={cameraUrl || 'http://localhost:8000/media/3.mp4'}
+          src={cameraUrl || 'http://localhost:8000/media/2.mp4'}
           autoPlay
           loop
           muted

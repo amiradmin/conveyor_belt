@@ -433,18 +433,7 @@ export default function VideoProcessingSection({
         )}
       </div>
 
-      <CameraControls
-        setShowVideoModal={setShowVideoModal}
-        takeSnapshot={takeSnapshot}
-        availableVideos={availableVideos}
-        selectedVideoPath={selectedVideoPath}
-        setSelectedVideoPath={setSelectedVideoPath}
-        processVideoFile={processVideoFile}
-        isProcessing={isProcessing}
-        processingProgress={processingProgress}
-        showProcessedFeed={showProcessedFeed}
-        toggleVideoProcessing={toggleVideoProcessing}
-      />
+
 
       {shouldShowStatusPanel && processedFrames !== undefined && (
         <StatusPanel
